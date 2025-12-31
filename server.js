@@ -5,12 +5,10 @@ const path = require('path');
 
 let messagesHistory = [];
 
-// 🔒 Extraire le pseudo depuis l'ID (format: pseudo-timestamp-xxx)
 function extractSenderFromId(id) {
   return id.split('-')[0];
 }
 
-// 🔒 Extraire le pseudo depuis le message (format: [HH:MM] pseudo: message)
 function extractSenderFromMessage(msg) {
   const match = msg.match(/^\[.*?\]\s*(.*?):/);
   return match ? match[1] : null;
@@ -50,7 +48,6 @@ wss.on('connection', (socket) => {
       if (parsed.type === 'message') {
         const fullMessage = parsed.text;
 
-        // 🔒 Suppression globale via texte
         const parts = fullMessage.split(': ');
         if (parts.length >= 2) {
           const messageContent = parts.slice(1).join(': ').trim();
@@ -89,7 +86,6 @@ wss.on('connection', (socket) => {
         });
         console.log('📩', fullMessage);
       }
-      // 🔒 Modification sécurisée
       else if (parsed.type === 'edit') {
         const originalMsg = messagesHistory.find(msg => 
           msg.startsWith(parsed.originalPrefix)
@@ -98,7 +94,6 @@ wss.on('connection', (socket) => {
           const originalSender = extractSenderFromMessage(originalMsg);
           const newSender = extractSenderFromMessage(parsed.text);
           const requester = extractSenderFromId(parsed.id);
-          // ✅ Vérification triple
           if (originalSender && originalSender === newSender && originalSender === requester) {
             const index = messagesHistory.indexOf(originalMsg);
             if (index !== -1) {
@@ -116,7 +111,6 @@ wss.on('connection', (socket) => {
           }
         }
       }
-      // 🔒 Suppression sécurisée
       else if (parsed.type === 'delete_for_all') {
         const originalMsg = messagesHistory.find(msg => 
           msg.startsWith(parsed.originalPrefix)
@@ -124,7 +118,6 @@ wss.on('connection', (socket) => {
         if (originalMsg) {
           const originalSender = extractSenderFromMessage(originalMsg);
           const requester = extractSenderFromId(parsed.id);
-          // ✅ Seulement l'auteur
           if (originalSender && originalSender === requester) {
             messagesHistory = messagesHistory.filter(msg => 
               !msg.startsWith(parsed.originalPrefix)
@@ -139,6 +132,27 @@ wss.on('connection', (socket) => {
             });
           }
         }
+      }
+      // 🔸 Indicateur de saisie
+      else if (parsed.type === 'typing') {
+        wss.clients.forEach(client => {
+          if (client !== socket && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'typing',
+              user: parsed.user
+            }));
+          }
+        });
+      }
+      else if (parsed.type === 'stop_typing') {
+        wss.clients.forEach(client => {
+          if (client !== socket && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'stop_typing',
+              user: parsed.user
+            }));
+          }
+        });
       }
     } catch (e) {
       console.log('Message non JSON, ignoré');
