@@ -23,7 +23,7 @@
     button:hover { opacity:0.9; }
     #recordBtn.active { background:#e74c3c; }
     #chat { 
-      height:350px; border:1px solid #eee; margin:10px 0; padding:12px; 
+      height:330px; border:1px solid #eee; margin:10px 0; padding:12px; 
       overflow-y:auto; background:#fff; border-radius:8px; position: relative;
     }
     .message { 
@@ -76,6 +76,15 @@
     .message:hover .dots {
       display: block;
     }
+
+    /* 🔸 Indicateur de saisie */
+    #typingIndicator {
+      color: #666;
+      font-style: italic;
+      margin-top: 8px;
+      min-height: 20px;
+      text-align: center;
+    }
   </style>
   <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
 </head>
@@ -97,9 +106,10 @@
 
   <div class="chat-app" id="chatApp">
     <div id="chat"></div>
+    <div id="typingIndicator"></div>
     
     <div class="input-area">
-      <input type="text" id="msg" placeholder="Message..." />
+      <input type="text" id="msg" placeholder="Message... (tape 'remove conv from all' pour effacer tout)" />
       <button onclick="send()">Envoyer</button>
       <button id="recordBtn" onclick="toggleRecording()">🎤</button>
       <input type="file" id="fileInput" accept="image/*,video/*" onchange="sendFile()" style="display:none;">
@@ -112,6 +122,8 @@
     let mediaRecorder;
     let audioChunks = [];
     let socket = null;
+    let typingTimer = null;
+    let isTyping = false;
 
     function connectWebSocket() {
       socket = new WebSocket('wss://' + window.location.host);
@@ -130,6 +142,8 @@
         else if (data.type === 'message') {
           displayMessage(data.text, data.id, data.timestamp, data.media, data.audio);
           document.getElementById('notif-sound').play().catch(()=>{});
+          // Arrêter l'indicateur de saisie quand un message arrive
+          document.getElementById('typingIndicator').textContent = '';
         }
         else if (data.type === 'edit') {
           const msgDiv = document.querySelector(`.message[data-id="${data.id}"]`);
@@ -149,6 +163,13 @@
         else if (data.type === 'clear_all') {
           document.getElementById('chat').innerHTML = '';
           alert('🗑️ La conversation a été effacée par un utilisateur.');
+        }
+        // 🔸 Indicateur de saisie
+        else if (data.type === 'typing') {
+          document.getElementById('typingIndicator').textContent = `${data.user} est en train d’écrire...`;
+        }
+        else if (data.type === 'stop_typing') {
+          document.getElementById('typingIndicator').textContent = '';
         }
       };
 
@@ -204,7 +225,6 @@
         messageDiv.textContent = fullMessage;
       }
 
-      // 🔸 Médias
       if (audioData) {
         const audioElement = document.createElement('audio');
         audioElement.controls = true;
@@ -230,7 +250,6 @@
         messageDiv.appendChild(mediaElement);
       }
 
-      // 🔸 Actions (modifier) — SEULEMENT pour tes messages
       if (timestamp && Date.now() - timestamp < 5 * 60 * 1000 && sender === user) {
         const actions = document.createElement('div');
         actions.className = 'actions';
@@ -239,7 +258,6 @@
         messageDiv.appendChild(actions);
       }
 
-      // 🔸 Menu ⋮ — SEULEMENT pour tes messages
       if (sender === user) {
         const dots = document.createElement('span');
         dots.className = 'dots';
@@ -254,53 +272,51 @@
       chat.appendChild(messageDiv);
       chat.scrollTop = messageDiv.offsetTop;
     }
+
     function showActionsMenu(messageDiv, messageId, fullMessage) {
-  // Cacher les autres menus
-  document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
+      document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
 
-  const menu = document.createElement('div');
-  menu.className = 'message-actions-menu';
-  
-  // Option 1: Supprimer pour moi
-  const deleteForMe = document.createElement('button');
-  deleteForMe.innerHTML = '🗑️ Supprimer pour moi';
-  deleteForMe.onclick = () => {
-    messageDiv.remove();
-    menu.remove();
-  };
-  menu.appendChild(deleteForMe);
-
-  // Option 2: Supprimer pour tous
-  const deleteForAll = document.createElement('button');
-  deleteForAll.innerHTML = '🌍 Supprimer pour tous';
-  deleteForAll.onclick = () => {
-    if (confirm('Supprimer ce message pour TOUS les utilisateurs ?')) {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          type: 'delete_for_all',
-          id: messageId,
-          originalPrefix: fullMessage.split('] ')[0] + '] '
-        }));
+      const menu = document.createElement('div');
+      menu.className = 'message-actions-menu';
+      
+      const deleteForMe = document.createElement('button');
+      deleteForMe.innerHTML = '🗑️ Supprimer pour moi';
+      deleteForMe.onclick = () => {
         messageDiv.remove();
-      } else {
-        alert('Connexion perdue.');
-      }
+        menu.remove();
+      };
+      menu.appendChild(deleteForMe);
+
+      const deleteForAll = document.createElement('button');
+      deleteForAll.innerHTML = '🌍 Supprimer pour tous';
+      deleteForAll.onclick = () => {
+        if (confirm('Supprimer ce message pour TOUS les utilisateurs ?')) {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'delete_for_all',
+              id: messageId,
+              originalPrefix: fullMessage.split('] ')[0] + '] '
+            }));
+            messageDiv.remove();
+          } else {
+            alert('Connexion perdue.');
+          }
+        }
+        menu.remove();
+      };
+      menu.appendChild(deleteForAll);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.innerHTML = '❌ Fermer';
+      closeBtn.onclick = () => {
+        menu.remove();
+      };
+      menu.appendChild(closeBtn);
+
+      messageDiv.appendChild(menu);
+      menu.style.display = 'block';
     }
-    menu.remove();
-  };
-  menu.appendChild(deleteForAll);
 
-  // 🔸 Option 3: Fermer le menu
-  const closeBtn = document.createElement('button');
-  closeBtn.innerHTML = '❌ Fermer';
-  closeBtn.onclick = () => {
-    menu.remove();
-  };
-  menu.appendChild(closeBtn);
-
-  messageDiv.appendChild(menu);
-  menu.style.display = 'block';
-}
     function editMessage(id, fullMessage) {
       const content = fullMessage.split(': ').slice(1).join(': ');
       const newText = prompt('Modifier le message :', content);
@@ -342,7 +358,6 @@
             reader.onload = () => {
               const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
               const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
-              // 🔒 Inclure le pseudo dans l'ID
               const id = `${user}-${Date.now()}-audio-${Math.random().toString(36).substr(2, 5)}`;
               if (socket.readyState === WebSocket.OPEN) {
                 socket.send(JSON.stringify({
@@ -378,7 +393,6 @@
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
         const mediaTag = file.type.startsWith('video') ? '🎥' : '🖼️';
         const msg = `[${t}] ${user}: ${mediaTag} [Média]`;
-        // 🔒 Inclure le pseudo dans l'ID
         const id = `${user}-${Date.now()}-media-${Math.random().toString(36).substr(2, 5)}`;
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({
@@ -423,7 +437,6 @@
       if (m && user) {
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
         const fullMsg = `[${t}] ${user}: ${m}`;
-        // 🔒 Inclure le pseudo dans l'ID
         const id = `${user}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         socket.send(JSON.stringify({ 
           type: 'message', 
@@ -432,8 +445,41 @@
           timestamp: Date.now()
         }));
         document.getElementById('msg').value = '';
+        // Arrêter l'indicateur de saisie
+        if (isTyping) {
+          isTyping = false;
+          socket.send(JSON.stringify({
+            type: 'stop_typing',
+            user: user
+          }));
+        }
       }
     }
+
+    // 🔸 Indicateur de saisie
+    document.getElementById('msg').addEventListener('input', () => {
+      if (!isTyping && user) {
+        isTyping = true;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'typing',
+            user: user
+          }));
+        }
+      }
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => {
+        if (isTyping) {
+          isTyping = false;
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'stop_typing',
+              user: user
+            }));
+          }
+        }
+      }, 3000);
+    });
 
     document.getElementById('msg').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') send();
