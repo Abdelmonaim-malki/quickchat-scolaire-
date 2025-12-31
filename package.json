@@ -1,0 +1,15 @@
+{
+  "name": "quickchat-scolaire",
+  "version": "1.0.0",
+  "description": "Projet scolaire de messagerie en temps réel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.17.1"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}
