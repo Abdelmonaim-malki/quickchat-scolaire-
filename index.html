@@ -255,51 +255,55 @@
       chat.scrollTop = messageDiv.offsetTop;
     }
 
-    function showActionsMenu(messageDiv, messageId, fullMessage) {
-      document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
+   function showActionsMenu(messageDiv, messageId, fullMessage) {
+  // Cacher les autres menus
+  document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
 
-      const menu = document.createElement('div');
-      menu.className = 'message-actions-menu';
-      
-      const deleteForMe = document.createElement('button');
-      deleteForMe.innerHTML = '🗑️ Supprimer pour moi';
-      deleteForMe.onclick = () => {
+  const menu = document.createElement('div');
+  menu.className = 'message-actions-menu';
+  
+  // Option 1: Supprimer pour moi
+  const deleteForMe = document.createElement('button');
+  deleteForMe.innerHTML = '🗑️ Supprimer pour moi';
+  deleteForMe.onclick = () => {
+    messageDiv.remove();
+    menu.remove();
+  };
+  menu.appendChild(deleteForMe);
+
+  // Option 2: Supprimer pour tous
+  const deleteForAll = document.createElement('button');
+  deleteForAll.innerHTML = '🌍 Supprimer pour tous';
+  deleteForAll.onclick = () => {
+    if (confirm('Supprimer ce message pour TOUS les utilisateurs ?')) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'delete_for_all',
+          id: messageId,
+          originalPrefix: fullMessage.split('] ')[0] + '] '
+        }));
         messageDiv.remove();
-        menu.remove();
-      };
-      menu.appendChild(deleteForMe);
-
-      const deleteForAll = document.createElement('button');
-      deleteForAll.innerHTML = '🌍 Supprimer pour tous';
-      deleteForAll.onclick = () => {
-        if (confirm('Supprimer ce message pour TOUS les utilisateurs ?')) {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: 'delete_for_all',
-              id: messageId,
-              originalPrefix: fullMessage.split('] ')[0] + '] '
-            }));
-            messageDiv.remove();
-          } else {
-            alert('Connexion perdue.');
-          }
-        }
-        menu.remove();
-      };
-      menu.appendChild(deleteForAll);
-
-      const closeMenu = (e) => {
-        if (!menu.contains(e.target) && e.target !== dots) {
-          menu.remove();
-          document.removeEventListener('click', closeMenu);
-        }
-      };
-      document.addEventListener('click', closeMenu);
-
-      messageDiv.appendChild(menu);
-      menu.style.display = 'block';
+      } else {
+        alert('Connexion perdue.');
+      }
     }
+    menu.remove();
+  };
+  menu.appendChild(deleteForAll);
 
+  // 🔸 Fermer le menu si on clique ailleurs
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target) && e.target !== dots) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+
+  document.addEventListener('click', closeMenu);
+
+  messageDiv.appendChild(menu);
+  menu.style.display = 'block';
+}
     function editMessage(id, fullMessage) {
       const content = fullMessage.split(': ').slice(1).join(': ');
       const newText = prompt('Modifier le message :', content);
