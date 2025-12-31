@@ -3,7 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-// Historique global (stocké en mémoire)
+// Historique global
 let messagesHistory = [];
 
 const server = http.createServer((req, res) => {
@@ -13,7 +13,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(500);
         res.end('Erreur du serveur');
       } else {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(20, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(data);
       }
     });
@@ -32,8 +32,6 @@ const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (socket) => {
   console.log('👤 Nouvel utilisateur connecté');
-
-  // Envoyer l'historique complet au nouvel utilisateur
   socket.send(JSON.stringify({ type: 'history', messages: messagesHistory }));
 
   socket.on('message', (data) => {
@@ -41,16 +39,53 @@ wss.on('connection', (socket) => {
       const parsed = JSON.parse(data);
       if (parsed.type === 'message') {
         const fullMessage = parsed.text;
+        const sender = fullMessage.split(': ')[0]?.split('] ')[1] || 'Inconnu';
+
+        // Commande de suppression globale
+        if (fullMessage.includes('remove conv from all') && sender) {
+          console.log(`🗑️ ${sender} a demandé la suppression globale !`);
+          messagesHistory = [];
+          wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({ type: 'clear_all' }));
+            }
+          });
+          return;
+        }
+
         messagesHistory.push(fullMessage);
-        // Garder max 100 messages
         if (messagesHistory.length > 100) messagesHistory.shift();
-        // Diffuser à tous
+
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: 'message', text: fullMessage }));
+            client.send(JSON.stringify({ 
+              type: 'message', 
+              text: fullMessage,
+              id: parsed.id,
+              timestamp: parsed.timestamp,
+              audio: parsed.audio
+            }));
           }
         });
         console.log('📩', fullMessage);
+      }
+      else if (parsed.type === 'edit') {
+        // Mettre à jour l'historique
+        const index = messagesHistory.findIndex(msg => 
+          msg.includes(parsed.originalIdPart)
+        );
+        if (index !== -1) {
+          messagesHistory[index] = parsed.text;
+        }
+        wss.clients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ 
+              type: 'edit',
+              id: parsed.id,
+              text: parsed.text
+            }));
+          }
+        });
       }
     } catch (e) {
       console.log('Message non JSON, ignoré');
