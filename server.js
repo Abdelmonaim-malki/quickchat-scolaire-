@@ -3,7 +3,6 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-// Historique global
 let messagesHistory = [];
 
 const server = http.createServer((req, res) => {
@@ -40,7 +39,7 @@ wss.on('connection', (socket) => {
       if (parsed.type === 'message') {
         const fullMessage = parsed.text;
 
-        // 🔒 Vérification SÉCURISÉE de la suppression globale
+        // 🔒 Suppression globale SÉCURISÉE
         const parts = fullMessage.split(': ');
         if (parts.length >= 2) {
           const messageContent = parts.slice(1).join(': ').trim();
@@ -61,11 +60,10 @@ wss.on('connection', (socket) => {
           }
         }
 
-        // Ajouter le message normal
         messagesHistory.push(fullMessage);
         if (messagesHistory.length > 100) messagesHistory.shift();
 
-        // Transmettre à tous (inclure media si présent)
+        // Transmettre à tous
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
             const payload = {
@@ -75,6 +73,7 @@ wss.on('connection', (socket) => {
               timestamp: parsed.timestamp
             };
             if (parsed.media) payload.media = parsed.media;
+            if (parsed.audio) payload.audio = parsed.audio;
             client.send(JSON.stringify(payload));
           }
         });
