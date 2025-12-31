@@ -3,39 +3,83 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>QuickChat - Scolaire</title>
+  <title>QuickChat - Projet Ultime</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; font-family:Arial; }
-    body { background:#f5f5f5; padding:20px; max-width:600px; margin:20px auto; }
-    .header { text-align:center; margin-bottom:20px; padding:15px; background:#6e8efb; color:white; border-radius:10px; }
-    .login-screen, .chat-app { background:white; padding:20px; border-radius:10px; text-align:center; }
+    * { margin:0; padding:0; box-sizing:border-box; font-family:Arial, sans-serif; }
+    body { background:#f9f9f9; padding:15px; max-width:700px; margin:15px auto; }
+    .header { 
+      text-align:center; margin-bottom:15px; padding:12px; 
+      background:linear-gradient(135deg, #6e8efb, #a777e3); 
+      color:white; border-radius:10px; display:flex; justify-content:space-between; align-items:center; 
+    }
+    .header h2 { margin:0; display:flex; align-items:center; gap:8px; }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
+    .login-screen, .chat-app { background:white; padding:20px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
     .chat-app { display:none; }
-    input { width:100%; padding:10px; margin:10px 0; border:1px solid #ddd; border-radius:5px; }
-    button { background:#6e8efb; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; }
-    #chat { height:250px; border:1px solid #eee; margin:10px 0; padding:10px; overflow-y:auto; background:white; }
-    .message { margin:8px 0; padding:8px; background:#f9f9f9; border-radius:8px; word-wrap: break-word; }
-    .sender { font-weight: bold; }
+    .input-area { display:flex; gap:8px; margin-top:12px; }
+    input, button { padding:10px; border-radius:8px; border:1px solid #ddd; font-size:14px; }
+    #pseudo, #msg { flex:1; }
+    button { background:#6e8efb; color:white; border:none; cursor:pointer; font-weight:bold; }
+    button:hover { opacity:0.9; }
+    #recordBtn.active { background:#e74c3c; }
+    #chat { 
+      height:350px; border:1px solid #eee; margin:10px 0; padding:12px; 
+      overflow-y:auto; background:#fff; border-radius:8px; 
+    }
+    .message { 
+      margin:10px 0; padding:10px; background:#f5f5f5; border-radius:10px; 
+      word-wrap:break-word; position:relative; 
+    }
+    .sender { font-weight:bold; }
+    .edited { font-size:0.9em; color:#666; }
+    .media { margin-top:8px; max-width:250px; border-radius:8px; }
+    .actions { margin-top:8px; font-size:0.9em; color:#555; }
+    .actions button { padding:4px 8px; margin-right:5px; font-size:0.9em; }
+    .clear-btns { margin-top:10px; text-align:center; }
+    .clear-btns button { padding:8px 12px; margin:0 5px; }
   </style>
-  <audio id="sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
+  <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
 </head>
 <body>
-  <div class="header"><h2>💬 QuickChat</h2><p>Projet Scolaire</p></div>
+  <div class="header">
+    <h2>💬 QuickChat ULTIME</h2>
+    <div class="clear-btns" id="clearButtons" style="display:none;">
+      <button onclick="clearMine()">🗑️ Effacer mes messages</button>
+      <button onclick="clearAllPrompt()">🔥 Effacer pour tous</button>
+    </div>
+  </div>
   
   <div class="login-screen" id="login">
-    <input type="text" id="pseudo" placeholder="Ton pseudo" maxlength="15" />
-    <button onclick="join()">Rejoindre</button>
+    <h3>👤 Entrez un pseudo</h3>
+    <input type="text" id="pseudo" placeholder="Ex: Ali, Sara..." maxlength="15" />
+    <div class="controls">
+      <button onclick="join()">Rejoindre le chat</button>
+    </div>
   </div>
 
   <div class="chat-app" id="chatApp">
     <div id="chat"></div>
-    <input type="text" id="msg" placeholder="Message..." onkeypress="if(event.key==='Enter')send()" />
-    <button onclick="send()">Envoyer</button>
+    
+    <div class="input-area">
+      <input type="text" id="msg" placeholder="Message... (ex: https://lien.com/image.jpg)" />
+      <button onclick="send()">Envoyer</button>
+      <button id="recordBtn" onclick="toggleRecording()">🎤</button>
+      <input type="file" id="fileInput" accept="image/*,video/*" onchange="sendFile()" style="display:none;">
+      <button onclick="document.getElementById('fileInput').click()">📁</button>
+    </div>
+    
+    <div class="clear-btns">
+      <small>💡 Tape "remove conv from all" pour effacer pour tous</small>
+    </div>
   </div>
 
   <script>
     const socket = new WebSocket('wss://' + window.location.host);
     let user = '';
+    let mediaRecorder;
+    let audioChunks = [];
 
+    // Générer une couleur unique par pseudo
     function stringToColor(str) {
       let hash = 0;
       for (let i = 0; i < str.length; i++) {
@@ -49,58 +93,229 @@
       return color;
     }
 
+    // Extraire le pseudo
     function extractSender(message) {
       const match = message.match(/^\[.*?\]\s*(.*?):/);
       return match ? match[1] : 'Inconnu';
     }
 
-    function displayMessage(fullMessage) {
+    // Afficher un message
+    function displayMessage(fullMessage, id, timestamp) {
+      const chat = document.getElementById('chat');
       const messageDiv = document.createElement('div');
       messageDiv.className = 'message';
+      if (id) messageDiv.dataset.id = id;
+      if (timestamp) messageDiv.dataset.timestamp = timestamp;
+
       const sender = extractSender(fullMessage);
       const color = stringToColor(sender);
       const match = fullMessage.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
+      
       if (match) {
         messageDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]}`;
+        
+        // Détection de liens médias
+        const urlRegex = /(https?:\/\/.*\.(?:png|jpg|jpeg|gif|mp4|webm))/gi;
+        const mediaMatch = match[2].match(urlRegex);
+        if (mediaMatch) {
+          const url = mediaMatch[0];
+          if (url.match(/\.(mp4|webm)$/)) {
+            messageDiv.innerHTML += `<br><video src="${url}" controls class="media"></video>`;
+          } else {
+            messageDiv.innerHTML += `<br><img src="${url}" class="media">`;
+          }
+        }
       } else {
         messageDiv.textContent = fullMessage;
       }
-      document.getElementById('chat').appendChild(messageDiv);
-      document.getElementById('chat').scrollTop = messageDiv.offsetTop;
+
+      // Rendre modifiable si < 5 min
+      if (timestamp && Date.now() - timestamp < 5 * 60 * 1000) {
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        actions.innerHTML = `<button onclick="editMessage('${id}', \`${fullMessage.replace(/`/g, '\\`')}\`)">✏️ Modifier</button>`;
+        messageDiv.appendChild(actions);
+      }
+
+      chat.appendChild(messageDiv);
+      chat.scrollTop = messageDiv.offsetTop;
+    }
+
+    // Modifier un message
+    function editMessage(id, fullMessage) {
+      const content = fullMessage.split(': ').slice(1).join(': ');
+      const newText = prompt('Modifier le message :', content);
+      if (newText !== null && newText.trim() !== '') {
+        const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        const updatedMsg = fullMessage.replace(/: .*/, `: ${newText.trim()}`);
+        socket.send(JSON.stringify({
+          type: 'edit',
+          id: id,
+          text: updatedMsg,
+          originalIdPart: fullMessage.split('] ')[0] + ']'
+        }));
+      }
+    }
+
+    // Envoi vocal
+    function toggleRecording() {
+      const btn = document.getElementById('recordBtn');
+      if (btn.classList.contains('active')) {
+        if (mediaRecorder) mediaRecorder.stop();
+        btn.classList.remove('active');
+        btn.textContent = '🎤';
+      } else {
+        startRecording();
+      }
+    }
+
+    function startRecording() {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          mediaRecorder = new MediaRecorder(stream);
+          audioChunks = [];
+          mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+          mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+            const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
+            const id = Date.now() + '-audio';
+            socket.send(JSON.stringify({
+              type: 'message',
+              text: msg,
+              id: id,
+              timestamp: Date.now()
+            }));
+            // Réactiver le bouton
+            document.getElementById('recordBtn').classList.remove('active');
+            document.getElementById('recordBtn').textContent = '🎤';
+          };
+          mediaRecorder.start();
+          document.getElementById('recordBtn').classList.add('active');
+          document.getElementById('recordBtn').textContent = '⏹️';
+        })
+        .catch(err => alert('Micro non autorisé : ' + err));
+    }
+
+    // Envoi de fichier (image/vidéo)
+    function sendFile() {
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+      if (!file) return;
+      
+      if (!file.type.match('image.*|video.*')) {
+        alert('Veuillez choisir une image ou une vidéo.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        const mediaTag = file.type.startsWith('video') ? '🎥' : '🖼️';
+        const msg = `[${t}] ${user}: ${mediaTag} [Fichier envoyé]`;
+        const id = Date.now() + '-file';
+        socket.send(JSON.stringify({
+          type: 'message',
+          text: msg,
+          id: id,
+          timestamp: Date.now()
+        }));
+        // Optionnel : afficher l'aperçu
+        displayMessage(msg, id, Date.now());
+        fileInput.value = '';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Suppression locale
+    function clearMine() {
+      if (confirm('Effacer l’historique DE CE navigateur ?')) {
+        document.getElementById('chat').innerHTML = '';
+      }
+    }
+
+    // Suppression globale (avec confirmation)
+    function clearAllPrompt() {
+      if (confirm('⚠️ Effacer la conversation pour TOUS LES UTILISATEURS ?\nTapez "OUI" pour confirmer :')) {
+        const confirmWord = prompt('Tapez "OUI" en majuscules :');
+        if (confirmWord === 'OUI') {
+          document.getElementById('msg').value = 'remove conv from all';
+          send();
+        }
+      }
     }
 
     // Réception des messages
     socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.type === 'history') {
-        // Chargement de l'historique global
         document.getElementById('chat').innerHTML = '';
         data.messages.forEach(msg => displayMessage(msg));
         document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
-      } else if (data.type === 'message') {
-        displayMessage(data.text);
-        document.getElementById('sound').play().catch(()=>{});
+      } 
+      else if (data.type === 'message') {
+        displayMessage(data.text, data.id, data.timestamp);
+        document.getElementById('notif-sound').play().catch(()=>{});
+      }
+      else if (data.type === 'edit') {
+        const msgDiv = document.querySelector(`.message[data-id="${data.id}"]`);
+        if (msgDiv) {
+          const sender = extractSender(data.text);
+          const color = stringToColor(sender);
+          const match = data.text.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
+          if (match) {
+            msgDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]} <span class="edited">(✏️ modifié)</span>`;
+            // Réactiver les actions si < 5 min
+            const timestamp = parseInt(msgDiv.dataset.timestamp);
+            if (Date.now() - timestamp < 5 * 60 * 1000) {
+              const actions = document.createElement('div');
+              actions.className = 'actions';
+              actions.innerHTML = `<button onclick="editMessage('${data.id}', \`${data.text.replace(/`/g, '\\`')}\`)">✏️ Modifier</button>`;
+              msgDiv.appendChild(actions);
+            }
+          }
+        }
+      }
+      else if (data.type === 'clear_all') {
+        document.getElementById('chat').innerHTML = '';
+        alert('🗑️ La conversation a été effacée par un utilisateur.');
       }
     };
 
+    // Authentification
     function join() {
       const p = document.getElementById('pseudo').value.trim();
       if (p && p.length >= 2) {
         user = p;
         document.getElementById('login').style.display = 'none';
         document.getElementById('chatApp').style.display = 'block';
-      } else alert('Pseudo invalide');
+        document.getElementById('clearButtons').style.display = 'block';
+      } else {
+        alert('Pseudo invalide (min. 2 caractères).');
+      }
     }
 
+    // Envoi de message
     function send() {
       const m = document.getElementById('msg').value.trim();
       if (m && user) {
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
         const fullMsg = `[${t}] ${user}: ${m}`;
-        socket.send(JSON.stringify({ type: 'message', text: fullMsg }));
+        const id = Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+        socket.send(JSON.stringify({ 
+          type: 'message', 
+          text: fullMsg,
+          id: id,
+          timestamp: Date.now()
+        }));
         document.getElementById('msg').value = '';
       }
     }
+
+    // Entrée pour envoyer
+    document.getElementById('msg').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') send();
+    });
   </script>
 </body>
 </html>
