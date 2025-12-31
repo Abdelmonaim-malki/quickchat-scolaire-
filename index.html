@@ -24,7 +24,7 @@
     #recordBtn.active { background:#e74c3c; }
     #chat { 
       height:350px; border:1px solid #eee; margin:10px 0; padding:12px; 
-      overflow-y:auto; background:#fff; border-radius:8px; 
+      overflow-y:auto; background:#fff; border-radius:8px; position: relative;
     }
     .message { 
       margin:10px 0; padding:10px; background:#f5f5f5; border-radius:10px; 
@@ -37,6 +37,45 @@
     .actions button { padding:4px 8px; margin-right:5px; font-size:0.9em; }
     .clear-btns { margin-top:10px; text-align:center; }
     .clear-btns button { padding:8px 12px; margin:0 5px; }
+
+    /* 🔸 Menu de suppression */
+    .message-actions-menu {
+      position: absolute;
+      right: 10px;
+      top: 10px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      z-index: 100;
+      display: none;
+    }
+    .message-actions-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: 13px;
+      color: #333;
+    }
+    .message-actions-menu button:hover {
+      background: #f0f0f0;
+    }
+    .message .dots {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      cursor: pointer;
+      color: #999;
+      font-size: 20px;
+      display: none;
+    }
+    .message:hover .dots {
+      display: block;
+    }
   </style>
   <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
 </head>
@@ -146,8 +185,65 @@
         messageDiv.appendChild(actions);
       }
 
+      // 🔸 Menu de suppression (seulement pour tes messages)
+      if (sender === user) {
+        const dots = document.createElement('span');
+        dots.className = 'dots';
+        dots.innerHTML = '⋮';
+        dots.onclick = (e) => {
+          e.stopPropagation();
+          showActionsMenu(messageDiv, id, fullMessage);
+        };
+        messageDiv.appendChild(dots);
+      }
+
       chat.appendChild(messageDiv);
       chat.scrollTop = messageDiv.offsetTop;
+    }
+
+    function showActionsMenu(messageDiv, messageId, fullMessage) {
+      // Cacher les autres menus
+      document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
+
+      const menu = document.createElement('div');
+      menu.className = 'message-actions-menu';
+      
+      // Option 1: Supprimer pour moi
+      const deleteForMe = document.createElement('button');
+      deleteForMe.innerHTML = '🗑️ Supprimer pour moi';
+      deleteForMe.onclick = () => {
+        messageDiv.remove();
+        menu.remove();
+      };
+      menu.appendChild(deleteForMe);
+
+      // Option 2: Supprimer pour tous
+      const deleteForAll = document.createElement('button');
+      deleteForAll.innerHTML = '🌍 Supprimer pour tous';
+      deleteForAll.onclick = () => {
+        if (confirm('Supprimer ce message pour TOUS les utilisateurs ?')) {
+          socket.send(JSON.stringify({
+            type: 'delete_for_all',
+            id: messageId,
+            originalPrefix: fullMessage.split('] ')[0] + '] '
+          }));
+          messageDiv.remove();
+          menu.remove();
+        }
+      };
+      menu.appendChild(deleteForAll);
+
+      // Fermer le menu si on clique ailleurs
+      const closeMenu = (e) => {
+        if (!menu.contains(e.target) && e.target !== dots) {
+          menu.remove();
+          document.removeEventListener('click', closeMenu);
+        }
+      };
+      document.addEventListener('click', closeMenu);
+
+      messageDiv.appendChild(menu);
+      menu.style.display = 'block';
     }
 
     function editMessage(id, fullMessage) {
@@ -195,7 +291,7 @@
                 text: msg,
                 id: id,
                 timestamp: Date.now(),
-                audio: reader.result // ✅ Envoi des données audio
+                audio: reader.result
               }));
             };
             reader.readAsDataURL(audioBlob);
@@ -262,6 +358,10 @@
             msgDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]} <span class="edited">(✏️ modifié)</span>`;
           }
         }
+      }
+      else if (data.type === 'delete_message') {
+        const msgDiv = document.querySelector(`.message[data-id="${data.id}"]`);
+        if (msgDiv) msgDiv.remove();
       }
       else if (data.type === 'clear_all') {
         document.getElementById('chat').innerHTML = '';
