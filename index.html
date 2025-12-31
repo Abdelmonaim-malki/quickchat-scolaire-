@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>QuickChat - Messagerie en Temps Réel</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    body {
+      background: #f9f9f9;
+      padding: 20px;
+      max-width: 600px;
+      margin: 20px auto;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      padding: 15px;
+      background: linear-gradient(135deg, #6e8efb, #a777e3);
+      color: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    .header h1 {
+      font-size: 24px;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .header h1::before {
+      content: "💬";
+      font-size: 28px;
+    }
+    .login-screen, .chat-app {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .chat-app {
+      display: none;
+    }
+    .login-screen input {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 16px;
+    }
+    .login-screen button {
+      width: 100%;
+      padding: 12px;
+      background: #6e8efb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .login-screen button:hover {
+      background: #5a7bea;
+    }
+    .chat-container {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      overflow: hidden;
+      margin-top: 15px;
+    }
+    #chat {
+      height: 300px;
+      padding: 15px;
+      overflow-y: auto;
+      border-bottom: 1px solid #eee;
+    }
+    .message {
+      margin: 8px 0;
+      padding: 10px 15px;
+      border-radius: 15px;
+      max-width: 80%;
+      word-wrap: break-word;
+      background: #f0f0f0;
+      font-size: 14px;
+    }
+    .input-area {
+      display: flex;
+      gap: 8px;
+      padding: 15px;
+      background: #fff;
+      border-top: 1px solid #eee;
+    }
+    #message {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    #send {
+      padding: 10px 20px;
+      background: #6e8efb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    #send:hover {
+      background: #5a7bea;
+    }
+    @media (max-width: 600px) {
+      .input-area {
+        flex-direction: column;
+      }
+    }
+  </style>
+  <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
+  <link rel="icon" href="image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+</head>
+<body>
+  <div class="header">
+    <h1>QuickChat</h1>
+    <p>Messagerie en temps réel — Projet Scolaire</p>
+  </div>
+
+  <div class="login-screen" id="loginScreen">
+    <h2 style="margin-bottom: 15px;">👤 Entrez un pseudo</h2>
+    <input type="text" id="pseudoInput" placeholder="Ex: Ali, Sara..." maxlength="15" />
+    <button id="loginBtn">Rejoindre le chat</button>
+  </div>
+
+  <div class="chat-app" id="chatApp">
+    <p>Bienvenue, <strong id="currentPseudo"></strong> ! 💬</p>
+    <div class="chat-container">
+      <div id="chat"></div>
+      <div class="input-area">
+        <input type="text" id="message" placeholder="Écris ton message..." maxlength="100" />
+        <button id="send">Envoyer</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = new WebSocket((window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host);
+    let currentUser = '';
+
+    function stringToColor(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      let color = '#';
+      for (let i = 0; i < 3; i++) {
+        const value = (hash >> (i * 8)) & 0xff;
+        color += ('00' + value.toString(16)).substr(-2);
+      }
+      return color;
+    }
+
+    socket.onmessage = (event) => {
+      const msgDiv = document.createElement('div');
+      msgDiv.className = 'message';
+      const parts = event.data.split(': ');
+      const sender = parts[0];
+      const messageText = parts.slice(1).join(': ');
+      const color = stringToColor(sender);
+      msgDiv.innerHTML = `<span style="color:${color}; font-weight:bold;">${sender}:</span> ${messageText}`;
+      document.getElementById('chat').appendChild(msgDiv);
+      document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+      document.getElementById('notif-sound').play().catch(e => {});
+    };
+
+    document.getElementById('loginBtn').onclick = () => {
+      const pseudo = document.getElementById('pseudoInput').value.trim();
+      if (pseudo && pseudo.length >= 2) {
+        currentUser = pseudo;
+        document.getElementById('currentPseudo').textContent = pseudo;
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('chatApp').style.display = 'block';
+        document.getElementById('message').focus();
+      } else {
+        alert('Pseudo invalide (min. 2 caractères).');
+      }
+    };
+
+    document.getElementById('pseudoInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') document.getElementById('loginBtn').click();
+    });
+
+    document.getElementById('send').onclick = () => {
+      const msg = document.getElementById('message').value.trim();
+      if (msg) {
+        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        socket.send(`[${now}] ${currentUser}: ${msg}`);
+        document.getElementById('message').value = '';
+      }
+    };
+
+    document.getElementById('message').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') document.getElementById('send').click();
+    });
+  </script>
+</body>
+</html>
