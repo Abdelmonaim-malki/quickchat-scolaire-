@@ -13,7 +13,8 @@
     input { width:100%; padding:10px; margin:10px 0; border:1px solid #ddd; border-radius:5px; }
     button { background:#6e8efb; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; }
     #chat { height:250px; border:1px solid #eee; margin:10px 0; padding:10px; overflow-y:auto; background:white; }
-    .message { margin:8px 0; padding:8px; background:#f0f0f0; border-radius:8px; word-wrap: break-word; }
+    .message { margin:8px 0; padding:8px; background:#f9f9f9; border-radius:8px; word-wrap: break-word; }
+    .sender { font-weight: bold; }
   </style>
   <audio id="sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
 </head>
@@ -33,48 +34,100 @@
 
   <script>
     const HISTORY_KEY = 'quickchat_messages';
+    const COLORS_KEY = 'quickchat_colors';
     const socket = new WebSocket('wss://' + window.location.host);
     let user = '';
 
-    function saveMessage(msg) {
+    // Générer une couleur fixe à partir d'un pseudo
+    function stringToColor(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      let color = '#';
+      for (let i = 0; i < 3; i++) {
+        const value = (hash >> (i * 8)) & 0xff;
+        color += ('00' + value.toString(16)).substr(-2);
+      }
+      return color;
+    }
+
+    // Sauvegarder un message
+    function saveMessage(fullMessage) {
       const messages = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-      messages.push(msg);
+      messages.push(fullMessage);
       if (messages.length > 100) messages.shift();
       localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
     }
 
+    // Extraire le pseudo d'un message (ex: "[14:30] Ali: Salam" → "Ali")
+    function extractSender(message) {
+      const match = message.match(/^\[.*?\]\s*(.*?):/);
+      return match ? match[1] : 'Inconnu';
+    }
+
+    // Charger l'historique et restaurer les couleurs
     function loadHistory() {
       const messages = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      const savedColors = JSON.parse(localStorage.getItem(COLORS_KEY) || '{}');
       const chat = document.getElementById('chat');
       chat.innerHTML = '';
+
       messages.forEach(msg => {
-        const div = document.createElement('div');
-        div.className = 'message';
-        div.textContent = msg;
-        chat.appendChild(div);
+        const sender = extractSender(msg);
+        // Si on n'a pas encore de couleur pour ce pseudo, on en génère une
+        if (!savedColors[sender]) {
+          savedColors[sender] = stringToColor(sender);
+        }
+        displayMessage(msg, savedColors[sender]);
       });
+
+      // Sauvegarder les couleurs mises à jour
+      localStorage.setItem(COLORS_KEY, JSON.stringify(savedColors));
       chat.scrollTop = chat.scrollHeight;
     }
 
+    // Afficher un message avec la couleur du pseudo
+    function displayMessage(fullMessage, color) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'message';
+
+      const match = fullMessage.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
+      if (match) {
+        const senderPart = match[1];
+        const textPart = match[2];
+        messageDiv.innerHTML = `<span class="sender" style="color:${color}">${senderPart}</span> ${textPart}`;
+      } else {
+        messageDiv.textContent = fullMessage;
+      }
+
+      document.getElementById('chat').appendChild(messageDiv);
+      document.getElementById('chat').scrollTop = messageDiv.offsetTop;
+    }
+
+    // Réception d'un message du serveur
     socket.onmessage = (e) => {
       const msg = e.data;
       saveMessage(msg);
-      displayMessage(msg);
+
+      // Extraire le pseudo et obtenir/générer sa couleur
+      const sender = extractSender(msg);
+      let savedColors = JSON.parse(localStorage.getItem(COLORS_KEY) || '{}');
+      if (!savedColors[sender]) {
+        savedColors[sender] = stringToColor(sender);
+        localStorage.setItem(COLORS_KEY, JSON.stringify(savedColors));
+      }
+      displayMessage(msg, savedColors[sender]);
+
       document.getElementById('sound').play().catch(()=>{});
     };
 
-    function displayMessage(msg) {
-      const div = document.createElement('div');
-      div.className = 'message';
-      div.textContent = msg;
-      document.getElementById('chat').appendChild(div);
-      document.getElementById('chat').scrollTop = div.offsetTop;
-    }
-
+    // Au chargement de la page
     window.onload = () => {
       loadHistory();
     };
 
+    // Rejoindre le chat
     function join() {
       const p = document.getElementById('pseudo').value.trim();
       if (p && p.length >= 2) {
@@ -84,6 +137,7 @@
       } else alert('Pseudo invalide');
     }
 
+    // Envoyer un message
     function send() {
       const m = document.getElementById('msg').value.trim();
       if (m && user) {
