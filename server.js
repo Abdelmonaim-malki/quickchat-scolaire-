@@ -13,7 +13,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(500);
         res.end('Erreur du serveur');
       } else {
-        res.writeHead(20, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); // ✅ CORRIGÉ
         res.end(data);
       }
     });
@@ -41,7 +41,6 @@ wss.on('connection', (socket) => {
         const fullMessage = parsed.text;
         const sender = fullMessage.split(': ')[0]?.split('] ')[1] || 'Inconnu';
 
-        // Commande de suppression globale
         if (fullMessage.includes('remove conv from all') && sender) {
           console.log(`🗑️ ${sender} a demandé la suppression globale !`);
           messagesHistory = [];
@@ -62,30 +61,11 @@ wss.on('connection', (socket) => {
               type: 'message', 
               text: fullMessage,
               id: parsed.id,
-              timestamp: parsed.timestamp,
-              audio: parsed.audio
+              timestamp: parsed.timestamp
             }));
           }
         });
         console.log('📩', fullMessage);
-      }
-      else if (parsed.type === 'edit') {
-        // Mettre à jour l'historique
-        const index = messagesHistory.findIndex(msg => 
-          msg.includes(parsed.originalIdPart)
-        );
-        if (index !== -1) {
-          messagesHistory[index] = parsed.text;
-        }
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ 
-              type: 'edit',
-              id: parsed.id,
-              text: parsed.text
-            }));
-          }
-        });
       }
     } catch (e) {
       console.log('Message non JSON, ignoré');
