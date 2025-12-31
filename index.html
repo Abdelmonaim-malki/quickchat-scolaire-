@@ -16,9 +16,9 @@
     .controls { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
     .login-screen, .chat-app { background:white; padding:20px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
     .chat-app { display:none; }
-    .input-area { display:flex; gap:8px; margin-top:12px; }
+    .input-area { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
     input, button { padding:10px; border-radius:8px; border:1px solid #ddd; font-size:14px; }
-    #pseudo, #msg { flex:1; }
+    #pseudo, #msg { flex:1; min-width:150px; }
     button { background:#6e8efb; color:white; border:none; cursor:pointer; font-weight:bold; }
     button:hover { opacity:0.9; }
     #recordBtn.active { background:#e74c3c; }
@@ -79,7 +79,6 @@
     let mediaRecorder;
     let audioChunks = [];
 
-    // Générer une couleur unique par pseudo
     function stringToColor(str) {
       let hash = 0;
       for (let i = 0; i < str.length; i++) {
@@ -93,14 +92,12 @@
       return color;
     }
 
-    // Extraire le pseudo
     function extractSender(message) {
       const match = message.match(/^\[.*?\]\s*(.*?):/);
       return match ? match[1] : 'Inconnu';
     }
 
-    // Afficher un message
-    function displayMessage(fullMessage, id, timestamp) {
+    function displayMessage(fullMessage, id, timestamp, mediaData) {
       const chat = document.getElementById('chat');
       const messageDiv = document.createElement('div');
       messageDiv.className = 'message';
@@ -113,27 +110,35 @@
       
       if (match) {
         messageDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]}`;
-        
-        // Détection de liens médias
-        const urlRegex = /(https?:\/\/.*\.(?:png|jpg|jpeg|gif|mp4|webm))/gi;
-        const mediaMatch = match[2].match(urlRegex);
-        if (mediaMatch) {
-          const url = mediaMatch[0];
-          if (url.match(/\.(mp4|webm)$/)) {
-            messageDiv.innerHTML += `<br><video src="${url}" controls class="media"></video>`;
-          } else {
-            messageDiv.innerHTML += `<br><img src="${url}" class="media">`;
-          }
-        }
       } else {
         messageDiv.textContent = fullMessage;
       }
 
-      // Rendre modifiable si < 5 min
+      // 🔸 Afficher le média si présent
+      if (mediaData) {
+        const isVideo = mediaData.includes('video/');
+        const mediaElement = isVideo 
+          ? document.createElement('video') 
+          : document.createElement('img');
+        
+        if (isVideo) {
+          mediaElement.controls = true;
+          mediaElement.style.width = '250px';
+        } else {
+          mediaElement.style.maxWidth = '250px';
+          mediaElement.style.borderRadius = '8px';
+        }
+        mediaElement.src = mediaData;
+        messageDiv.appendChild(document.createElement('br'));
+        messageDiv.appendChild(mediaElement);
+      }
+
+      // 🔸 Actions de modification (si < 5 min)
       if (timestamp && Date.now() - timestamp < 5 * 60 * 1000) {
         const actions = document.createElement('div');
         actions.className = 'actions';
-        actions.innerHTML = `<button onclick="editMessage('${id}', \`${fullMessage.replace(/`/g, '\\`')}\`)">✏️ Modifier</button>`;
+        const safeMsg = fullMessage.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+        actions.innerHTML = `<button onclick="editMessage('${id}', \`${safeMsg}\`)">✏️ Modifier</button>`;
         messageDiv.appendChild(actions);
       }
 
@@ -141,23 +146,22 @@
       chat.scrollTop = messageDiv.offsetTop;
     }
 
-    // Modifier un message
     function editMessage(id, fullMessage) {
       const content = fullMessage.split(': ').slice(1).join(': ');
       const newText = prompt('Modifier le message :', content);
       if (newText !== null && newText.trim() !== '') {
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
         const updatedMsg = fullMessage.replace(/: .*/, `: ${newText.trim()}`);
+        const prefix = fullMessage.split('] ')[0] + '] ';
         socket.send(JSON.stringify({
           type: 'edit',
           id: id,
           text: updatedMsg,
-          originalIdPart: fullMessage.split('] ')[0] + ']'
+          originalPrefix: prefix
         }));
       }
     }
 
-    // Envoi vocal
     function toggleRecording() {
       const btn = document.getElementById('recordBtn');
       if (btn.classList.contains('active')) {
@@ -177,16 +181,19 @@
           mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
           mediaRecorder.onstop = () => {
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-            const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
-            const id = Date.now() + '-audio';
-            socket.send(JSON.stringify({
-              type: 'message',
-              text: msg,
-              id: id,
-              timestamp: Date.now()
-            }));
-            // Réactiver le bouton
+            const reader = new FileReader();
+            reader.onload = () => {
+              const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+              const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
+              const id = Date.now() + '-audio-' + Math.random().toString(36).substr(2, 5);
+              socket.send(JSON.stringify({
+                type: 'message',
+                text: msg,
+                id: id,
+                timestamp: Date.now()
+              }));
+            };
+            reader.readAsDataURL(audioBlob);
             document.getElementById('recordBtn').classList.remove('active');
             document.getElementById('recordBtn').textContent = '🎤';
           };
@@ -197,7 +204,6 @@
         .catch(err => alert('Micro non autorisé : ' + err));
     }
 
-    // Envoi de fichier (image/vidéo)
     function sendFile() {
       const fileInput = document.getElementById('fileInput');
       const file = fileInput.files[0];
@@ -212,29 +218,26 @@
       reader.onload = (e) => {
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
         const mediaTag = file.type.startsWith('video') ? '🎥' : '🖼️';
-        const msg = `[${t}] ${user}: ${mediaTag} [Fichier envoyé]`;
-        const id = Date.now() + '-file';
+        const msg = `[${t}] ${user}: ${mediaTag} [Média]`;
+        const id = Date.now() + '-media-' + Math.random().toString(36).substr(2, 5);
         socket.send(JSON.stringify({
           type: 'message',
           text: msg,
           id: id,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          media: e.target.result // ✅ Envoi du base64
         }));
-        // Optionnel : afficher l'aperçu
-        displayMessage(msg, id, Date.now());
         fileInput.value = '';
       };
       reader.readAsDataURL(file);
     }
 
-    // Suppression locale
     function clearMine() {
       if (confirm('Effacer l’historique DE CE navigateur ?')) {
         document.getElementById('chat').innerHTML = '';
       }
     }
 
-    // Suppression globale (avec confirmation)
     function clearAllPrompt() {
       if (confirm('⚠️ Effacer la conversation pour TOUS LES UTILISATEURS ?\nTapez "OUI" pour confirmer :')) {
         const confirmWord = prompt('Tapez "OUI" en majuscules :');
@@ -245,7 +248,6 @@
       }
     }
 
-    // Réception des messages
     socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.type === 'history') {
@@ -254,7 +256,7 @@
         document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
       } 
       else if (data.type === 'message') {
-        displayMessage(data.text, data.id, data.timestamp);
+        displayMessage(data.text, data.id, data.timestamp, data.media);
         document.getElementById('notif-sound').play().catch(()=>{});
       }
       else if (data.type === 'edit') {
@@ -265,14 +267,6 @@
           const match = data.text.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
           if (match) {
             msgDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]} <span class="edited">(✏️ modifié)</span>`;
-            // Réactiver les actions si < 5 min
-            const timestamp = parseInt(msgDiv.dataset.timestamp);
-            if (Date.now() - timestamp < 5 * 60 * 1000) {
-              const actions = document.createElement('div');
-              actions.className = 'actions';
-              actions.innerHTML = `<button onclick="editMessage('${data.id}', \`${data.text.replace(/`/g, '\\`')}\`)">✏️ Modifier</button>`;
-              msgDiv.appendChild(actions);
-            }
           }
         }
       }
@@ -282,7 +276,6 @@
       }
     };
 
-    // Authentification
     function join() {
       const p = document.getElementById('pseudo').value.trim();
       if (p && p.length >= 2) {
@@ -295,7 +288,6 @@
       }
     }
 
-    // Envoi de message
     function send() {
       const m = document.getElementById('msg').value.trim();
       if (m && user) {
@@ -312,7 +304,6 @@
       }
     }
 
-    // Entrée pour envoyer
     document.getElementById('msg').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') send();
     });
