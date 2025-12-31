@@ -32,7 +32,7 @@
     }
     .sender { font-weight:bold; }
     .edited { font-size:0.9em; color:#666; }
-    .media { margin-top:8px; max-width:250px; border-radius:8px; }
+    .media, .audio-player { margin-top:8px; max-width:250px; border-radius:8px; }
     .actions { margin-top:8px; font-size:0.9em; color:#555; }
     .actions button { padding:4px 8px; margin-right:5px; font-size:0.9em; }
     .clear-btns { margin-top:10px; text-align:center; }
@@ -45,7 +45,6 @@
     <h2>💬 QuickChat ULTIME</h2>
     <div class="clear-btns" id="clearButtons" style="display:none;">
       <button onclick="clearMine()">🗑️ Effacer mes messages</button>
-      
     </div>
   </div>
   
@@ -61,15 +60,11 @@
     <div id="chat"></div>
     
     <div class="input-area">
-      <input type="text" id="msg" placeholder="Message... (ex: https://lien.com/image.jpg)" />
+      <input type="text" id="msg" placeholder="Message... (tape 'remove conv from all' pour effacer tout)" />
       <button onclick="send()">Envoyer</button>
       <button id="recordBtn" onclick="toggleRecording()">🎤</button>
       <input type="file" id="fileInput" accept="image/*,video/*" onchange="sendFile()" style="display:none;">
       <button onclick="document.getElementById('fileInput').click()">📁</button>
-    </div>
-    
-    <div class="clear-btns">
-      <small>💡 Tape "remove conv from all" pour effacer pour tous</small>
     </div>
   </div>
 
@@ -97,7 +92,7 @@
       return match ? match[1] : 'Inconnu';
     }
 
-    function displayMessage(fullMessage, id, timestamp, mediaData) {
+    function displayMessage(fullMessage, id, timestamp, mediaData, audioData) {
       const chat = document.getElementById('chat');
       const messageDiv = document.createElement('div');
       messageDiv.className = 'message';
@@ -114,13 +109,22 @@
         messageDiv.textContent = fullMessage;
       }
 
-      // 🔸 Afficher le média si présent
+      // 🔸 Afficher l'audio
+      if (audioData) {
+        const audioElement = document.createElement('audio');
+        audioElement.controls = true;
+        audioElement.style.width = '100%';
+        audioElement.src = audioData;
+        messageDiv.appendChild(document.createElement('br'));
+        messageDiv.appendChild(audioElement);
+      }
+
+      // 🔸 Afficher l'image/vidéo
       if (mediaData) {
         const isVideo = mediaData.includes('video/');
         const mediaElement = isVideo 
           ? document.createElement('video') 
           : document.createElement('img');
-        
         if (isVideo) {
           mediaElement.controls = true;
           mediaElement.style.width = '250px';
@@ -133,7 +137,7 @@
         messageDiv.appendChild(mediaElement);
       }
 
-      // 🔸 Actions de modification (si < 5 min)
+      // 🔸 Bouton modifier (si < 5 min)
       if (timestamp && Date.now() - timestamp < 5 * 60 * 1000) {
         const actions = document.createElement('div');
         actions.className = 'actions';
@@ -190,7 +194,8 @@
                 type: 'message',
                 text: msg,
                 id: id,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                audio: reader.result // ✅ Envoi des données audio
               }));
             };
             reader.readAsDataURL(audioBlob);
@@ -208,12 +213,10 @@
       const fileInput = document.getElementById('fileInput');
       const file = fileInput.files[0];
       if (!file) return;
-      
       if (!file.type.match('image.*|video.*')) {
         alert('Veuillez choisir une image ou une vidéo.');
         return;
       }
-
       const reader = new FileReader();
       reader.onload = (e) => {
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
@@ -225,7 +228,7 @@
           text: msg,
           id: id,
           timestamp: Date.now(),
-          media: e.target.result // ✅ Envoi du base64
+          media: e.target.result
         }));
         fileInput.value = '';
       };
@@ -238,8 +241,6 @@
       }
     }
 
-    
-
     socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.type === 'history') {
@@ -248,7 +249,7 @@
         document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
       } 
       else if (data.type === 'message') {
-        displayMessage(data.text, data.id, data.timestamp, data.media);
+        displayMessage(data.text, data.id, data.timestamp, data.media, data.audio);
         document.getElementById('notif-sound').play().catch(()=>{});
       }
       else if (data.type === 'edit') {
