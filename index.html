@@ -45,7 +45,7 @@
     <h2>💬 QuickChat ULTIME</h2>
     <div class="clear-btns" id="clearButtons" style="display:none;">
       <button onclick="clearMine()">🗑️ Effacer mes messages</button>
-      <button onclick="clearAllPrompt()">🔥 Effacer pour tous</button>
+      
     </div>
   </div>
   
@@ -238,15 +238,7 @@
       }
     }
 
-    function clearAllPrompt() {
-      if (confirm('⚠️ Effacer la conversation pour TOUS LES UTILISATEURS ?\nTapez "OUI" pour confirmer :')) {
-        const confirmWord = prompt('Tapez "OUI" en majuscules :');
-        if (confirmWord === 'OUI') {
-          document.getElementById('msg').value = 'remove conv from all';
-          send();
-        }
-      }
-    }
+    
 
     socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
