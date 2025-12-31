@@ -13,7 +13,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(500);
         res.end('Erreur du serveur');
       } else {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); // ✅ CORRIGÉ
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(data);
       }
     });
@@ -39,33 +39,63 @@ wss.on('connection', (socket) => {
       const parsed = JSON.parse(data);
       if (parsed.type === 'message') {
         const fullMessage = parsed.text;
-        const sender = fullMessage.split(': ')[0]?.split('] ')[1] || 'Inconnu';
 
-        if (fullMessage.includes('remove conv from all') && sender) {
-          console.log(`🗑️ ${sender} a demandé la suppression globale !`);
-          messagesHistory = [];
-          wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify({ type: 'clear_all' }));
+        // 🔒 Vérification SÉCURISÉE de la suppression globale
+        const parts = fullMessage.split(': ');
+        if (parts.length >= 2) {
+          const messageContent = parts.slice(1).join(': ').trim();
+          if (messageContent === 'remove conv from all') {
+            const senderPart = parts[0];
+            const senderMatch = senderPart.match(/\]\s*(.*)/);
+            const sender = senderMatch ? senderMatch[1] : 'Inconnu';
+            if (sender) {
+              console.log(`🗑️ ${sender} a demandé la suppression globale !`);
+              messagesHistory = [];
+              wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                  client.send(JSON.stringify({ type: 'clear_all' }));
+                }
+              });
+              return;
             }
-          });
-          return;
+          }
         }
 
+        // Ajouter le message normal
         messagesHistory.push(fullMessage);
         if (messagesHistory.length > 100) messagesHistory.shift();
 
+        // Transmettre à tous (inclure media si présent)
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ 
-              type: 'message', 
+            const payload = {
+              type: 'message',
               text: fullMessage,
               id: parsed.id,
               timestamp: parsed.timestamp
-            }));
+            };
+            if (parsed.media) payload.media = parsed.media;
+            client.send(JSON.stringify(payload));
           }
         });
         console.log('📩', fullMessage);
+      }
+      else if (parsed.type === 'edit') {
+        const index = messagesHistory.findIndex(msg => 
+          msg.startsWith(parsed.originalPrefix)
+        );
+        if (index !== -1) {
+          messagesHistory[index] = parsed.text;
+        }
+        wss.clients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ 
+              type: 'edit',
+              id: parsed.id,
+              text: parsed.text
+            }));
+          }
+        });
       }
     } catch (e) {
       console.log('Message non JSON, ignoré');
