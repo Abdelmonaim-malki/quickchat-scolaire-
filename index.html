@@ -37,4 +37,62 @@
     let user = '';
 
     function saveMessage(msg) {
-      const messages =
+      const messages = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      messages.push(msg);
+      if (messages.length > 100) messages.shift();
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
+    }
+
+    function loadHistory() {
+      const messages = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      const chat = document.getElementById('chat');
+      chat.innerHTML = '';
+      messages.forEach(msg => {
+        const div = document.createElement('div');
+        div.className = 'message';
+        div.textContent = msg;
+        chat.appendChild(div);
+      });
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    socket.onmessage = (e) => {
+      const msg = e.data;
+      saveMessage(msg);
+      displayMessage(msg);
+      document.getElementById('sound').play().catch(()=>{});
+    };
+
+    function displayMessage(msg) {
+      const div = document.createElement('div');
+      div.className = 'message';
+      div.textContent = msg;
+      document.getElementById('chat').appendChild(div);
+      document.getElementById('chat').scrollTop = div.offsetTop;
+    }
+
+    window.onload = () => {
+      loadHistory();
+    };
+
+    function join() {
+      const p = document.getElementById('pseudo').value.trim();
+      if (p && p.length >= 2) {
+        user = p;
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('chatApp').style.display = 'block';
+      } else alert('Pseudo invalide');
+    }
+
+    function send() {
+      const m = document.getElementById('msg').value.trim();
+      if (m && user) {
+        const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        const fullMsg = `[${t}] ${user}: ${m}`;
+        socket.send(fullMsg);
+        document.getElementById('msg').value = '';
+      }
+    }
+  </script>
+</body>
+</html>
