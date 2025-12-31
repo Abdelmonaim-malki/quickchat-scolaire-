@@ -5,6 +5,17 @@ const path = require('path');
 
 let messagesHistory = [];
 
+// 🔒 Extraire le pseudo depuis l'ID (format: pseudo-timestamp-xxx)
+function extractSenderFromId(id) {
+  return id.split('-')[0];
+}
+
+// 🔒 Extraire le pseudo depuis le message (format: [HH:MM] pseudo: message)
+function extractSenderFromMessage(msg) {
+  const match = msg.match(/^\[.*?\]\s*(.*?):/);
+  return match ? match[1] : null;
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === '/' || req.url === '/index.html') {
     fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
@@ -78,36 +89,56 @@ wss.on('connection', (socket) => {
         });
         console.log('📩', fullMessage);
       }
+      // 🔒 Modification sécurisée
       else if (parsed.type === 'edit') {
-        const index = messagesHistory.findIndex(msg => 
+        const originalMsg = messagesHistory.find(msg => 
           msg.startsWith(parsed.originalPrefix)
         );
-        if (index !== -1) {
-          messagesHistory[index] = parsed.text;
+        if (originalMsg) {
+          const originalSender = extractSenderFromMessage(originalMsg);
+          const newSender = extractSenderFromMessage(parsed.text);
+          const requester = extractSenderFromId(parsed.id);
+          // ✅ Vérification triple
+          if (originalSender && originalSender === newSender && originalSender === requester) {
+            const index = messagesHistory.indexOf(originalMsg);
+            if (index !== -1) {
+              messagesHistory[index] = parsed.text;
+            }
+            wss.clients.forEach(client => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({ 
+                  type: 'edit',
+                  id: parsed.id,
+                  text: parsed.text
+                }));
+              }
+            });
+          }
         }
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ 
-              type: 'edit',
-              id: parsed.id,
-              text: parsed.text
-            }));
-          }
-        });
       }
-      // 🔸 Supprimer un message pour tous
+      // 🔒 Suppression sécurisée
       else if (parsed.type === 'delete_for_all') {
-        messagesHistory = messagesHistory.filter(msg => 
-          !msg.startsWith(parsed.originalPrefix)
+        const originalMsg = messagesHistory.find(msg => 
+          msg.startsWith(parsed.originalPrefix)
         );
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-              type: 'delete_message',
-              id: parsed.id
-            }));
+        if (originalMsg) {
+          const originalSender = extractSenderFromMessage(originalMsg);
+          const requester = extractSenderFromId(parsed.id);
+          // ✅ Seulement l'auteur
+          if (originalSender && originalSender === requester) {
+            messagesHistory = messagesHistory.filter(msg => 
+              !msg.startsWith(parsed.originalPrefix)
+            );
+            wss.clients.forEach(client => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                  type: 'delete_message',
+                  id: parsed.id
+                }));
+              }
+            });
           }
-        });
+        }
       }
     } catch (e) {
       console.log('Message non JSON, ignoré');
