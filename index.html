@@ -33,12 +33,9 @@
   </div>
 
   <script>
-    const HISTORY_KEY = 'quickchat_messages';
-    const COLORS_KEY = 'quickchat_colors';
     const socket = new WebSocket('wss://' + window.location.host);
     let user = '';
 
-    // Générer une couleur fixe à partir d'un pseudo
     function stringToColor(str) {
       let hash = 0;
       for (let i = 0; i < str.length; i++) {
@@ -52,82 +49,40 @@
       return color;
     }
 
-    // Sauvegarder un message
-    function saveMessage(fullMessage) {
-      const messages = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-      messages.push(fullMessage);
-      if (messages.length > 100) messages.shift();
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
-    }
-
-    // Extraire le pseudo d'un message (ex: "[14:30] Ali: Salam" → "Ali")
     function extractSender(message) {
       const match = message.match(/^\[.*?\]\s*(.*?):/);
       return match ? match[1] : 'Inconnu';
     }
 
-    // Charger l'historique et restaurer les couleurs
-    function loadHistory() {
-      const messages = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-      const savedColors = JSON.parse(localStorage.getItem(COLORS_KEY) || '{}');
-      const chat = document.getElementById('chat');
-      chat.innerHTML = '';
-
-      messages.forEach(msg => {
-        const sender = extractSender(msg);
-        // Si on n'a pas encore de couleur pour ce pseudo, on en génère une
-        if (!savedColors[sender]) {
-          savedColors[sender] = stringToColor(sender);
-        }
-        displayMessage(msg, savedColors[sender]);
-      });
-
-      // Sauvegarder les couleurs mises à jour
-      localStorage.setItem(COLORS_KEY, JSON.stringify(savedColors));
-      chat.scrollTop = chat.scrollHeight;
-    }
-
-    // Afficher un message avec la couleur du pseudo
-    function displayMessage(fullMessage, color) {
+    function displayMessage(fullMessage) {
       const messageDiv = document.createElement('div');
       messageDiv.className = 'message';
-
+      const sender = extractSender(fullMessage);
+      const color = stringToColor(sender);
       const match = fullMessage.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
       if (match) {
-        const senderPart = match[1];
-        const textPart = match[2];
-        messageDiv.innerHTML = `<span class="sender" style="color:${color}">${senderPart}</span> ${textPart}`;
+        messageDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]}`;
       } else {
         messageDiv.textContent = fullMessage;
       }
-
       document.getElementById('chat').appendChild(messageDiv);
       document.getElementById('chat').scrollTop = messageDiv.offsetTop;
     }
 
-    // Réception d'un message du serveur
+    // Réception des messages
     socket.onmessage = (e) => {
-      const msg = e.data;
-      saveMessage(msg);
-
-      // Extraire le pseudo et obtenir/générer sa couleur
-      const sender = extractSender(msg);
-      let savedColors = JSON.parse(localStorage.getItem(COLORS_KEY) || '{}');
-      if (!savedColors[sender]) {
-        savedColors[sender] = stringToColor(sender);
-        localStorage.setItem(COLORS_KEY, JSON.stringify(savedColors));
+      const data = JSON.parse(e.data);
+      if (data.type === 'history') {
+        // Chargement de l'historique global
+        document.getElementById('chat').innerHTML = '';
+        data.messages.forEach(msg => displayMessage(msg));
+        document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+      } else if (data.type === 'message') {
+        displayMessage(data.text);
+        document.getElementById('sound').play().catch(()=>{});
       }
-      displayMessage(msg, savedColors[sender]);
-
-      document.getElementById('sound').play().catch(()=>{});
     };
 
-    // Au chargement de la page
-    window.onload = () => {
-      loadHistory();
-    };
-
-    // Rejoindre le chat
     function join() {
       const p = document.getElementById('pseudo').value.trim();
       if (p && p.length >= 2) {
@@ -137,13 +92,12 @@
       } else alert('Pseudo invalide');
     }
 
-    // Envoyer un message
     function send() {
       const m = document.getElementById('msg').value.trim();
       if (m && user) {
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
         const fullMsg = `[${t}] ${user}: ${m}`;
-        socket.send(fullMsg);
+        socket.send(JSON.stringify({ type: 'message', text: fullMsg }));
         document.getElementById('msg').value = '';
       }
     }
