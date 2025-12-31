@@ -254,8 +254,7 @@
       chat.appendChild(messageDiv);
       chat.scrollTop = messageDiv.offsetTop;
     }
-
-   function showActionsMenu(messageDiv, messageId, fullMessage) {
+    function showActionsMenu(messageDiv, messageId, fullMessage) {
   // Cacher les autres menus
   document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
 
@@ -291,15 +290,13 @@
   };
   menu.appendChild(deleteForAll);
 
-  // 🔸 Fermer le menu si on clique ailleurs
-  const closeMenu = (e) => {
-    if (!menu.contains(e.target) && e.target !== dots) {
-      menu.remove();
-      document.removeEventListener('click', closeMenu);
-    }
+  // 🔸 Option 3: Fermer le menu
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '❌ Fermer';
+  closeBtn.onclick = () => {
+    menu.remove();
   };
-
-  document.addEventListener('click', closeMenu);
+  menu.appendChild(closeBtn);
 
   messageDiv.appendChild(menu);
   menu.style.display = 'block';
