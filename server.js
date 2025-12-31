@@ -39,7 +39,7 @@ wss.on('connection', (socket) => {
       if (parsed.type === 'message') {
         const fullMessage = parsed.text;
 
-        // 🔒 Suppression globale SÉCURISÉE
+        // 🔒 Suppression globale via texte
         const parts = fullMessage.split(': ');
         if (parts.length >= 2) {
           const messageContent = parts.slice(1).join(': ').trim();
@@ -63,7 +63,6 @@ wss.on('connection', (socket) => {
         messagesHistory.push(fullMessage);
         if (messagesHistory.length > 100) messagesHistory.shift();
 
-        // Transmettre à tous
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
             const payload = {
@@ -92,6 +91,20 @@ wss.on('connection', (socket) => {
               type: 'edit',
               id: parsed.id,
               text: parsed.text
+            }));
+          }
+        });
+      }
+      // 🔸 Supprimer un message pour tous
+      else if (parsed.type === 'delete_for_all') {
+        messagesHistory = messagesHistory.filter(msg => 
+          !msg.startsWith(parsed.originalPrefix)
+        );
+        wss.clients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'delete_message',
+              id: parsed.id
             }));
           }
         });
