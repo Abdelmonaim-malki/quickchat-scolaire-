@@ -113,7 +113,6 @@
     let audioChunks = [];
     let socket = null;
 
-    // 🔸 Fonction pour (re)connecter
     function connectWebSocket() {
       socket = new WebSocket('wss://' + window.location.host);
       
@@ -159,7 +158,6 @@
 
       socket.onclose = () => {
         console.log('🔴 Connexion fermée');
-        // Optionnel : se reconnecter automatiquement
         setTimeout(() => {
           if (user) connectWebSocket();
         }, 3000);
@@ -185,7 +183,6 @@
     }
 
     function displayMessage(fullMessage, id, timestamp, mediaData, audioData) {
-      // 🔸 Protection contre les messages invalides
       if (!fullMessage || typeof fullMessage !== 'string') {
         console.warn('Message invalide reçu:', fullMessage);
         return;
@@ -207,7 +204,7 @@
         messageDiv.textContent = fullMessage;
       }
 
-      // 🔸 Afficher l'audio
+      // 🔸 Médias
       if (audioData) {
         const audioElement = document.createElement('audio');
         audioElement.controls = true;
@@ -216,8 +213,6 @@
         messageDiv.appendChild(document.createElement('br'));
         messageDiv.appendChild(audioElement);
       }
-
-      // 🔸 Afficher l'image/vidéo
       if (mediaData) {
         const isVideo = mediaData.includes('video/');
         const mediaElement = isVideo 
@@ -235,8 +230,8 @@
         messageDiv.appendChild(mediaElement);
       }
 
-      // 🔸 Bouton modifier (si < 5 min)
-      if (timestamp && Date.now() - timestamp < 5 * 60 * 1000) {
+      // 🔸 Actions (modifier) — SEULEMENT pour tes messages
+      if (timestamp && Date.now() - timestamp < 5 * 60 * 1000 && sender === user) {
         const actions = document.createElement('div');
         actions.className = 'actions';
         const safeMsg = fullMessage.replace(/`/g, '\\`').replace(/\$/g, '\\$');
@@ -244,7 +239,7 @@
         messageDiv.appendChild(actions);
       }
 
-      // 🔸 Menu de suppression (seulement pour tes messages)
+      // 🔸 Menu ⋮ — SEULEMENT pour tes messages
       if (sender === user) {
         const dots = document.createElement('span');
         dots.className = 'dots';
@@ -346,7 +341,8 @@
             reader.onload = () => {
               const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
               const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
-              const id = Date.now() + '-audio-' + Math.random().toString(36).substr(2, 5);
+              // 🔒 Inclure le pseudo dans l'ID
+              const id = `${user}-${Date.now()}-audio-${Math.random().toString(36).substr(2, 5)}`;
               if (socket.readyState === WebSocket.OPEN) {
                 socket.send(JSON.stringify({
                   type: 'message',
@@ -381,7 +377,8 @@
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
         const mediaTag = file.type.startsWith('video') ? '🎥' : '🖼️';
         const msg = `[${t}] ${user}: ${mediaTag} [Média]`;
-        const id = Date.now() + '-media-' + Math.random().toString(36).substr(2, 5);
+        // 🔒 Inclure le pseudo dans l'ID
+        const id = `${user}-${Date.now()}-media-${Math.random().toString(36).substr(2, 5)}`;
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({
             type: 'message',
@@ -409,7 +406,7 @@
         document.getElementById('login').style.display = 'none';
         document.getElementById('chatApp').style.display = 'block';
         document.getElementById('clearButtons').style.display = 'block';
-        connectWebSocket(); // 🔸 Connexion ici
+        connectWebSocket();
       } else {
         alert('Pseudo invalide (min. 2 caractères).');
       }
@@ -425,7 +422,8 @@
       if (m && user) {
         const t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
         const fullMsg = `[${t}] ${user}: ${m}`;
-        const id = Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+        // 🔒 Inclure le pseudo dans l'ID
+        const id = `${user}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         socket.send(JSON.stringify({ 
           type: 'message', 
           text: fullMsg,
@@ -439,11 +437,6 @@
     document.getElementById('msg').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') send();
     });
-
-    // 🔸 Init
-    window.onload = () => {
-      // La connexion se fera après le login
-    };
   </script>
 </body>
 </html>
