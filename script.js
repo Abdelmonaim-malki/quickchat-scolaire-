@@ -4,6 +4,7 @@ let socket = null;
 let typingTimer = null;
 let isTyping = false;
 let unreadPrivateMessages = new Set(); // Pour les badges rouges
+const privateHistories = {}; // { "Ali-Sara": [msg1, msg2] }
 
 // Éléments DOM
 const loginScreen = document.getElementById('loginScreen');
@@ -21,6 +22,9 @@ const typingIndicator = document.getElementById('typingIndicator');
 const usersListEl = document.getElementById('usersList');
 const notifSound = document.getElementById('notif-sound');
 
+let mediaRecorder;
+let audioChunks = [];
+
 // Événements
 loginBtn.addEventListener('click', handleLogin);
 msgInput.addEventListener('keypress', (e) => {
@@ -32,9 +36,6 @@ recordBtn.addEventListener('click', toggleRecording);
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', sendFile);
 backToGeneralBtn.addEventListener('click', switchToGeneral);
-
-let mediaRecorder;
-let audioChunks = [];
 
 function handleLogin() {
   const pseudo = pseudoInput.value.trim();
@@ -82,16 +83,26 @@ function connectWebSocket() {
           const otherUser = data.sender === user ? data.receiver : data.sender;
           const room = getPrivateRoom(user, otherUser);
           
-          // Marquer comme non lu si ce n'est pas la conversation active
-          if (currentChat !== room) {
-            unreadPrivateMessages.add(otherUser);
-          }
+          // Sauvegarder dans l'historique local
+          if (!privateHistories[room]) privateHistories[room] = [];
+          privateHistories[room].push(data.text);
           
           if (currentChat === room) {
             addMessage(data.text, 'private', otherUser);
             notifSound.play().catch(() => {});
+            // 🔸 Effacer le badge SEULEMENT ici
+            unreadPrivateMessages.delete(otherUser);
+          } else {
+            unreadPrivateMessages.add(otherUser);
           }
-          updateUserList(getOnlineUsers()); // Met à jour les badges
+          updateUserList(getOnlineUsers());
+        }
+      }
+      else if (data.type === 'private_history') {
+        if (currentChat === data.room) {
+          const otherUser = getOtherUser(data.room);
+          data.history.forEach(msg => addMessage(msg, 'private', otherUser));
+          privateHistories[data.room] = data.history;
         }
       }
       else if (data.type === 'clear_all') {
@@ -122,6 +133,11 @@ function connectWebSocket() {
 
 function getPrivateRoom(u1, u2) {
   return [u1, u2].sort().join('-');
+}
+
+function getOtherUser(room) {
+  const users = room.split('-');
+  return users[0] === user ? users[1] : users[0];
 }
 
 function getOnlineUsers() {
@@ -161,13 +177,8 @@ function updateUserList(users) {
     }
 
     span.onclick = () => {
-      // Effacer le badge
-      unreadPrivateMessages.delete(u);
-      currentChat = getPrivateRoom(user, u);
-      chat.innerHTML = '';
-      // Charger historique privé (optionnel)
-      updateHeader();
-      updateUserList(users); // Rafraîchir la liste
+      // 🔸 Ne PAS effacer le badge ici
+      switchToPrivateChat(u);
     };
 
     usersListEl.appendChild(span);
@@ -185,6 +196,35 @@ function updateHeader() {
 function switchToGeneral() {
   currentChat = 'general';
   chat.innerHTML = '';
+  // Recharger historique général
+  loadGeneralHistory();
+  updateHeader();
+  updateUserList(getOnlineUsers());
+}
+
+function loadGeneralHistory() {
+  // L'historique général est déjà chargé au démarrage
+  // Pour le projet scolaire, on le garde simple
+}
+
+function switchToPrivateChat(targetUser) {
+  currentChat = getPrivateRoom(user, targetUser);
+  chat.innerHTML = '';
+  
+  // Charger historique privé
+  const room = currentChat;
+  if (privateHistories[room] && privateHistories[room].length > 0) {
+    privateHistories[room].forEach(msg => addMessage(msg, 'private', targetUser));
+  } else {
+    // Demander l'historique au serveur
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'get_private_history',
+        room: room
+      }));
+    }
+  }
+  
   updateHeader();
   updateUserList(getOnlineUsers());
 }
@@ -204,7 +244,7 @@ function addMessage(fullMessage, type, sender) {
     messageDiv.textContent = fullMessage;
   }
 
-  // Médias (si présents dans le texte)
+  // Médias
   const urlRegex = /(https?:\/\/.*\.(?:png|jpg|jpeg|gif|mp4|webm))/gi;
   const mediaMatch = fullMessage.match(urlRegex);
   if (mediaMatch) {
@@ -264,23 +304,36 @@ function sendMessage() {
   const fullMsg = `[${time}] ${user}: ${msg}`;
 
   if (currentChat === 'general') {
+    sendMessageRaw(fullMsg);
+  } else {
+    const otherUser = getOtherUser(currentChat);
+    sendMessageRaw(fullMsg, otherUser);
+  }
+  msgInput.value = '';
+  typingIndicator.textContent = '';
+}
+
+function sendMessageRaw(fullMsg, targetUser = null) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    alert('Connexion perdue.');
+    return;
+  }
+
+  if (targetUser) {
+    socket.send(JSON.stringify({
+      type: 'message',
+      text: fullMsg,
+      target: targetUser,
+      sender: user
+    }));
+  } else {
     socket.send(JSON.stringify({
       type: 'message',
       text: fullMsg,
       target: 'general',
       sender: user
     }));
-  } else {
-    const otherUser = currentChat.replace(user + '-', '').replace('-' + user, '');
-    socket.send(JSON.stringify({
-      type: 'message',
-      text: fullMsg,
-      target: otherUser,
-      sender: user
-    }));
   }
-  msgInput.value = '';
-  typingIndicator.textContent = '';
 }
 
 function toggleRecording() {
@@ -305,15 +358,11 @@ function startRecording() {
         reader.onload = () => {
           const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
-          const id = `${user}-${Date.now()}-audio-${Math.random().toString(36).substr(2, 5)}`;
-          if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: 'message',
-              text: msg,
-              id: id,
-              timestamp: Date.now(),
-              audio: reader.result
-            }));
+          if (currentChat === 'general') {
+            sendMessageRaw(msg);
+          } else {
+            const otherUser = getOtherUser(currentChat);
+            sendMessageRaw(msg, otherUser);
           }
         };
         reader.readAsDataURL(audioBlob);
@@ -339,15 +388,11 @@ function sendFile() {
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const mediaTag = file.type.startsWith('video') ? '🎥' : '🖼️';
     const msg = `[${t}] ${user}: ${mediaTag} [Média]`;
-    const id = `${user}-${Date.now()}-media-${Math.random().toString(36).substr(2, 5)}`;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({
-        type: 'message',
-        text: msg,
-        id: id,
-        timestamp: Date.now(),
-        media: e.target.result
-      }));
+    if (currentChat === 'general') {
+      sendMessageRaw(msg);
+    } else {
+      const otherUser = getOtherUser(currentChat);
+      sendMessageRaw(msg, otherUser);
     }
     fileInput.value = '';
   };
