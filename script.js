@@ -13,6 +13,10 @@ const loginBtn = document.getElementById('loginBtn');
 const chat = document.getElementById('chat');
 const msgInput = document.getElementById('msg');
 const sendBtn = document.getElementById('sendBtn');
+const recordBtn = document.getElementById('recordBtn');
+const fileInput = document.getElementById('fileInput');
+const fileBtn = document.getElementById('fileBtn');
+const backToGeneralBtn = document.getElementById('backToGeneralBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 const usersListEl = document.getElementById('usersList');
 const notifSound = document.getElementById('notif-sound');
@@ -24,6 +28,13 @@ msgInput.addEventListener('keypress', (e) => {
 });
 msgInput.addEventListener('input', handleTyping);
 sendBtn.addEventListener('click', sendMessage);
+recordBtn.addEventListener('click', toggleRecording);
+fileBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', sendFile);
+backToGeneralBtn.addEventListener('click', switchToGeneral);
+
+let mediaRecorder;
+let audioChunks = [];
 
 function handleLogin() {
   const pseudo = pseudoInput.value.trim();
@@ -134,7 +145,7 @@ function updateUserList(users) {
     span.dataset.user = u;
     span.textContent = u;
     span.style.cursor = 'pointer';
-    span.style.margin = '0 5px';
+    span.style.margin = '0 3px';
     
     // Badge rouge si message non lu
     if (unreadPrivateMessages.has(u)) {
@@ -154,12 +165,28 @@ function updateUserList(users) {
       unreadPrivateMessages.delete(u);
       currentChat = getPrivateRoom(user, u);
       chat.innerHTML = '';
-      chatHeader = `🔒 Conversation avec ${u}`;
+      // Charger historique privé (optionnel)
+      updateHeader();
       updateUserList(users); // Rafraîchir la liste
     };
 
     usersListEl.appendChild(span);
   });
+}
+
+function updateHeader() {
+  if (currentChat === 'general') {
+    backToGeneralBtn.style.display = 'none';
+  } else {
+    backToGeneralBtn.style.display = 'inline-block';
+  }
+}
+
+function switchToGeneral() {
+  currentChat = 'general';
+  chat.innerHTML = '';
+  updateHeader();
+  updateUserList(getOnlineUsers());
 }
 
 function addMessage(fullMessage, type, sender) {
@@ -254,4 +281,75 @@ function sendMessage() {
   }
   msgInput.value = '';
   typingIndicator.textContent = '';
+}
+
+function toggleRecording() {
+  if (recordBtn.classList.contains('active')) {
+    if (mediaRecorder) mediaRecorder.stop();
+    recordBtn.classList.remove('active');
+    recordBtn.textContent = '🎤';
+  } else {
+    startRecording();
+  }
+}
+
+function startRecording() {
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(stream => {
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.onload = () => {
+          const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
+          const id = `${user}-${Date.now()}-audio-${Math.random().toString(36).substr(2, 5)}`;
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'message',
+              text: msg,
+              id: id,
+              timestamp: Date.now(),
+              audio: reader.result
+            }));
+          }
+        };
+        reader.readAsDataURL(audioBlob);
+        recordBtn.classList.remove('active');
+        recordBtn.textContent = '🎤';
+      };
+      mediaRecorder.start();
+      recordBtn.classList.add('active');
+      recordBtn.textContent = '⏹️';
+    })
+    .catch(err => alert('Micro non autorisé : ' + err));
+}
+
+function sendFile() {
+  const file = fileInput.files[0];
+  if (!file) return;
+  if (!file.type.match('image.*|video.*')) {
+    alert('Veuillez choisir une image ou une vidéo.');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const mediaTag = file.type.startsWith('video') ? '🎥' : '🖼️';
+    const msg = `[${t}] ${user}: ${mediaTag} [Média]`;
+    const id = `${user}-${Date.now()}-media-${Math.random().toString(36).substr(2, 5)}`;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'message',
+        text: msg,
+        id: id,
+        timestamp: Date.now(),
+        media: e.target.result
+      }));
+    }
+    fileInput.value = '';
+  };
+  reader.readAsDataURL(file);
 }
