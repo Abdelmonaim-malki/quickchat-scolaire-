@@ -15,10 +15,14 @@ function extractSenderFromMessage(msg) {
   return match ? match[1] : null;
 }
 
+// 🔹 SERVEUR DE FICHIERS STATIQUES (CORRIGÉ POUR GÉRER LES QUERY STRINGS)
 function serveStaticFile(req, res) {
-  const url = req.url === '/' ? '/index.html' : req.url;
+  // ✅ Nettoyer l'URL : ignorer tout ce qui est après le '?'
+  const cleanUrl = req.url.split('?')[0];
+  const url = cleanUrl === '/' ? '/index.html' : cleanUrl;
   const filePath = path.join(__dirname, url);
 
+  // Sécurité : empêcher l'accès à des fichiers en dehors du dossier
   if (!filePath.startsWith(__dirname + path.sep)) {
     res.writeHead(403);
     res.end('Accès interdit');
@@ -34,7 +38,8 @@ function serveStaticFile(req, res) {
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.gif': 'image/gif',
-    '.ico': 'image/x-icon'
+    '.ico': 'image/x-icon',
+    '.svg': 'image/svg+xml'
   };
 
   const contentType = mimeTypes[ext] || 'application/octet-stream';
@@ -147,13 +152,12 @@ wss.on('connection', (socket) => {
         if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
           targetSocket.send(JSON.stringify(payload));
         }
-        // Toujours envoyer à l'expéditeur
+        // Toujours renvoyer à l'expéditeur
         socket.send(JSON.stringify(payload));
       }
 
       else if (parsed.type === 'edit') {
         if (parsed.to) {
-          // Édition privée
           let targetSocket = null;
           for (let [sock, info] of clients.entries()) {
             if (info.pseudo === parsed.to) {
@@ -174,7 +178,6 @@ wss.on('connection', (socket) => {
             text: parsed.text
           }));
         } else {
-          // Édition publique
           const originalMsg = messagesHistory.find(msg => 
             msg.startsWith(parsed.originalPrefix)
           );
