@@ -204,7 +204,6 @@ function switchToGeneral() {
 
 function loadGeneralHistory() {
   // L'historique général est déjà chargé au démarrage
-  // Pour le projet scolaire, on le garde simple
 }
 
 function switchToPrivateChat(targetUser) {
@@ -256,6 +255,18 @@ function addMessage(fullMessage, type, sender) {
     }
   }
 
+  // 🔸 Menu ⋮ — SEULEMENT pour les messages de l'utilisateur
+  if (type !== 'private' || sender === user) {
+    const dots = document.createElement('span');
+    dots.className = 'dots';
+    dots.innerHTML = '⋮';
+    dots.onclick = (e) => {
+      e.stopPropagation();
+      showActionsMenu(messageDiv, fullMessage, sender);
+    };
+    messageDiv.appendChild(dots);
+  }
+
   chat.appendChild(messageDiv);
   chat.scrollTop = messageDiv.offsetTop;
 }
@@ -271,6 +282,54 @@ function stringToColor(str) {
     color += ('00' + value.toString(16)).substr(-2);
   }
   return color;
+}
+
+function showActionsMenu(messageDiv, fullMessage, sender) {
+  // Cacher les autres menus
+  document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'message-actions-menu';
+  
+  // Option 1: Supprimer pour moi
+  const deleteForMe = document.createElement('button');
+  deleteForMe.innerHTML = '🗑️ Supprimer pour moi';
+  deleteForMe.onclick = () => {
+    messageDiv.remove();
+    menu.remove();
+  };
+  menu.appendChild(deleteForMe);
+
+  // Option 2: Supprimer pour tous
+  const deleteForAll = document.createElement('button');
+  deleteForAll.innerHTML = '🌍 Supprimer pour tous';
+  deleteForAll.onclick = () => {
+    if (confirm('Supprimer ce message pour TOUS les utilisateurs ?')) {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'delete_for_all',
+          id: Date.now(),
+          originalPrefix: fullMessage.split('] ')[0] + '] '
+        }));
+        messageDiv.remove();
+      } else {
+        alert('Connexion perdue.');
+      }
+    }
+    menu.remove();
+  };
+  menu.appendChild(deleteForAll);
+
+  // Option 3: Fermer
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '❌ Fermer';
+  closeBtn.onclick = () => {
+    menu.remove();
+  };
+  menu.appendChild(closeBtn);
+
+  messageDiv.appendChild(menu);
+  menu.style.display = 'block';
 }
 
 function handleTyping() {
