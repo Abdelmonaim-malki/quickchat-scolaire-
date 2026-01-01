@@ -1,0 +1,170 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+}
+body {
+  background: #f9f9f9;
+  padding: 15px;
+  max-width: 700px;
+  margin: 15px auto;
+}
+.header {
+  text-align: center;
+  margin-bottom: 15px;
+  padding: 12px;
+  background: linear-gradient(135deg, #6e8efb, #a777e3);
+  color: white;
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.header h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 10px;
+}
+.login-screen, .chat-app {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+.chat-app {
+  display: none;
+}
+.input-area {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+input, button {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+}
+#pseudo, #msg {
+  flex: 1;
+  min-width: 150px;
+}
+button {
+  background: #6e8efb;
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+}
+button:hover {
+  opacity: 0.9;
+}
+#recordBtn.active {
+  background: #e74c3c;
+}
+#chat {
+  height: 330px;
+  border: 1px solid #eee;
+  margin: 10px 0;
+  padding: 12px;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 8px;
+  position: relative;
+}
+.message {
+  margin: 10px 0;
+  padding: 10px;
+  background: #f5f5f5;
+  border-radius: 10px;
+  word-wrap: break-word;
+  position: relative;
+}
+.sender {
+  font-weight: bold;
+}
+.edited {
+  font-size: 0.9em;
+  color: #666;
+}
+.media, .audio-player {
+  margin-top: 8px;
+  max-width: 250px;
+  border-radius: 8px;
+}
+.actions {
+  margin-top: 8px;
+  font-size: 0.9em;
+  color: #555;
+}
+.actions button {
+  padding: 4px 8px;
+  margin-right: 5px;
+  font-size: 0.9em;
+}
+.clear-btns {
+  margin-top: 10px;
+  text-align: center;
+}
+.clear-btns button {
+  padding: 8px 12px;
+  margin: 0 5px;
+}
+
+/* 🔸 Menu de suppression */
+.message-actions-menu {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  display: none;
+}
+.message-actions-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+}
+.message-actions-menu button:hover {
+  background: #f0f0f0;
+}
+.message .dots {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  cursor: pointer;
+  color: #999;
+  font-size: 20px;
+  display: none;
+}
+.message:hover .dots {
+  display: block;
+}
+
+/* 🔸 Indicateur de saisie */
+#typingIndicator {
+  color: #666;
+  font-style: italic;
+  margin-top: 8px;
+  min-height: 20px;
+  text-align: center;
+}
