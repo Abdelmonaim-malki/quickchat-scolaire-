@@ -16,22 +16,23 @@
 
   <!-- App de chat -->
   <div class="chat-app" id="chatApp" style="display:none;">
-    <div class="chat-container">
-      <!-- Liste des utilisateurs -->
-      <div class="users-list" id="usersList">
-        <div class="user-item active" data-user="general">💬 Général</div>
+    <div class="header">
+      <h2>💬 QuickChat</h2>
+      <!-- 🔸 Liste discrète des utilisateurs -->
+      <div class="online-users" id="onlineUsers">
+        En ligne : <span id="usersList">Chargement...</span>
       </div>
-
-      <!-- Zone de conversation -->
-      <div class="chat-area">
-        <div class="chat-header" id="chatHeader">💬 Général</div>
-        <div id="chat" class="messages"></div>
-        <div id="typingIndicator" class="typing-indicator"></div>
-        <div class="input-area">
-          <input type="text" id="msg" placeholder="Message..." />
-          <button id="sendBtn">Envoyer</button>
-        </div>
-      </div>
+    </div>
+    
+    <div id="chat"></div>
+    <div id="typingIndicator"></div>
+    
+    <div class="input-area">
+      <input type="text" id="msg" placeholder="Message... (tapez 'remove conv from all' pour effacer tout)" />
+      <button id="sendBtn">Envoyer</button>
+      <button id="recordBtn">🎤</button>
+      <input type="file" id="fileInput" accept="image/*,video/*" style="display:none;">
+      <button id="fileBtn">📁</button>
     </div>
   </div>
 
