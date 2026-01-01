@@ -43,6 +43,36 @@ body {
 .chat-app {
   display: none;
 }
+
+/* 🔹 Liste en ligne */
+.online-panel {
+  margin: 15px 0;
+  padding: 12px;
+  background: #f0f7ff;
+  border-radius: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.online-panel h4 {
+  margin: 0 0 10px 0;
+  font-size: 15px;
+}
+#onlineList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+#onlineList li {
+  padding: 6px 0;
+  cursor: pointer;
+  color: #1e88e5;
+  font-weight: bold;
+}
+#onlineList li:hover {
+  background: #e3f2fd;
+  border-radius: 5px;
+}
+
 .input-area {
   display: flex;
   gap: 8px;
