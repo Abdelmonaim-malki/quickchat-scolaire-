@@ -133,7 +133,7 @@ wss.on('connection', (socket) => {
           }
         }
       }
-      // 🔸 Indicateur de saisie
+      // 🔸 INDICATEUR DE SAISIE — CORRIGÉ
       else if (parsed.type === 'typing') {
         wss.clients.forEach(client => {
           if (client !== socket && client.readyState === WebSocket.OPEN) {
