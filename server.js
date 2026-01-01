@@ -134,6 +134,16 @@ wss.on('connection', (socket) => {
           }
         }
       }
+      // 🔸 Demande d'historique privé
+      else if (parsed.type === 'get_private_history') {
+        const room = parsed.room;
+        const history = privateHistories[room] || [];
+        socket.send(JSON.stringify({ 
+          type: 'private_history', 
+          room: room, 
+          history: history 
+        }));
+      }
     } catch (e) {
       console.log('Message non JSON, ignoré');
     }
