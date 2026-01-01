@@ -14,21 +14,52 @@ function extractSenderFromMessage(msg) {
   return match ? match[1] : null;
 }
 
-const server = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/index.html') {
-    fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
-      if (err) {
-        res.writeHead(500);
-        res.end('Erreur du serveur');
-      } else {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(data);
-      }
-    });
-  } else {
-    res.writeHead(404);
-    res.end('Page non trouvée');
+// Fonction pour servir les fichiers statiques
+function serveStaticFile(req, res) {
+  const url = req.url === '/' ? '/index.html' : req.url;
+  const filePath = path.join(__dirname, url);
+
+  // Sécurité : empêcher l'accès à des fichiers hors du dossier
+  if (!filePath.startsWith(__dirname + path.sep)) {
+    res.writeHead(403);
+    res.end('Accès interdit');
+    return;
   }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'application/javascript; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.ico': 'image/x-icon'
+  };
+
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      if (err.code === 'ENOENT') {
+        res.writeHead(404);
+        res.end('Fichier non trouvé');
+      } else {
+        res.writeHead(500);
+        res.end('Erreur serveur');
+      }
+    } else {
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(data);
+    }
+  });
+}
+
+const server = http.createServer((req, res) => {
+  // Si c'est une requête WebSocket, on ne sert pas de fichier
+  // Sinon, on sert les fichiers statiques
+  serveStaticFile(req, res);
 });
 
 const PORT = process.env.PORT || 3000;
@@ -133,7 +164,6 @@ wss.on('connection', (socket) => {
           }
         }
       }
-      // 🔸 Indicateur de saisie
       else if (parsed.type === 'typing') {
         wss.clients.forEach(client => {
           if (client !== socket && client.readyState === WebSocket.OPEN) {
