@@ -166,7 +166,7 @@ function addMessage(fullMessage, type, sender) {
   if (!fullMessage || typeof fullMessage !== 'string') return;
 
   const messageDiv = document.createElement('div');
-  messageDir.className = 'message';
+  messageDiv.className = 'message';
   
   const match = fullMessage.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
   if (match) {
