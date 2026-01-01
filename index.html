@@ -3,40 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>QuickChat</title>
+  <title>QuickChat - Projet Scolaire</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Écran de login -->
+  <div class="login-screen" id="loginScreen">
+    <h2>👤 Entrez un pseudo</h2>
+    <input type="text" id="pseudoInput" placeholder="Ex: Ali, Sara..." maxlength="15" />
+    <button id="loginBtn">Rejoindre</button>
+  </div>
 
-<div class="login-screen" id="loginScreen">
-  <h2>👤 Entrez un pseudo</h2>
-  <input type="text" id="pseudoInput" />
-  <button id="loginBtn">Rejoindre</button>
-</div>
-
-<div class="chat-app" id="chatApp" style="display:none;">
-  <div class="header">
-    <h2>💬 QuickChat</h2>
-    <div class="online-users">
-      En ligne : <span id="usersList"></span>
+  <!-- App de chat -->
+  <div class="chat-app" id="chatApp" style="display:none;">
+    <div class="header">
+      <h2>💬 QuickChat</h2>
+      <div class="online-users" id="onlineUsers">
+        En ligne : <span id="usersList">Chargement...</span>
+      </div>
+    </div>
+    
+    <div id="chat"></div>
+    <div id="typingIndicator"></div>
+    
+    <div class="input-area">
+      <input type="text" id="msg" placeholder="Écris ton message..." />
+      <button id="sendBtn">Envoyer</button>
+      <button id="recordBtn">🎤</button>
+      <input type="file" id="fileInput" accept="image/*,video/*" style="display:none;">
+      <button id="fileBtn">📁</button>
+      <button id="backToGeneralBtn" style="display:none;">← Général</button>
     </div>
   </div>
 
-  <div id="chat"></div>
-  <div id="typingIndicator"></div>
-
-  <div class="input-area">
-    <input id="msg" placeholder="Écrire..." />
-    <button id="sendBtn">📤</button>
-    <button id="recordBtn">🎤</button>
-    <input type="file" id="fileInput" hidden />
-    <button id="fileBtn">📁</button>
-    <button id="backToGeneralBtn" style="display:none;">← Général</button>
-  </div>
-</div>
-
-<audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3"></audio>
-
-<script src="script.js"></script>
+  <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
+  <script src="script.js"></script>
 </body>
 </html>
