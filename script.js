@@ -3,18 +3,18 @@ let currentChat = 'general'; // 'general' ou 'user1-user2'
 let socket = null;
 let typingTimer = null;
 let isTyping = false;
+let unreadPrivateMessages = new Set(); // Pour les badges rouges
 
 // Éléments DOM
 const loginScreen = document.getElementById('loginScreen');
 const chatApp = document.getElementById('chatApp');
 const pseudoInput = document.getElementById('pseudoInput');
 const loginBtn = document.getElementById('loginBtn');
-const usersList = document.getElementById('usersList');
-const chatHeader = document.getElementById('chatHeader');
 const chat = document.getElementById('chat');
 const msgInput = document.getElementById('msg');
 const sendBtn = document.getElementById('sendBtn');
 const typingIndicator = document.getElementById('typingIndicator');
+const usersListEl = document.getElementById('usersList');
 const notifSound = document.getElementById('notif-sound');
 
 // Événements
@@ -30,7 +30,7 @@ function handleLogin() {
   if (pseudo && pseudo.length >= 2) {
     user = pseudo;
     loginScreen.style.display = 'none';
-    chatApp.style.display = 'flex';
+    chatApp.style.display = 'block';
     connectWebSocket();
   } else {
     alert('Pseudo invalide (min. 2 caractères).');
@@ -41,8 +41,6 @@ function connectWebSocket() {
   socket = new WebSocket('wss://' + window.location.host);
   
   socket.onopen = () => {
-    console.log('🟢 Connecté au serveur');
-    // S'authentifier
     socket.send(JSON.stringify({ type: 'auth', pseudo: user }));
   };
 
@@ -51,45 +49,48 @@ function connectWebSocket() {
       const data = JSON.parse(e.data);
       
       if (data.type === 'init') {
-        // Charger historique général
-        data.history.forEach(msg => addMessageToChat(msg, 'general'));
-        // Ajouter utilisateurs
-        data.users.forEach(u => {
-          if (u !== user) addUserToList(u);
-        });
+        // Historique général
+        data.history.forEach(msg => addMessage(msg, 'general'));
+        // Liste des utilisateurs
+        updateUserList(data.users);
       }
       else if (data.type === 'user_join') {
-        if (data.user !== user) {
-          addUserToList(data.user);
-        }
+        updateUserList(Array.from(new Set([...getOnlineUsers(), data.user])));
       }
       else if (data.type === 'user_leave') {
-        removeUserFromList(data.user);
+        updateUserList(getOnlineUsers().filter(u => u !== data.user));
       }
       else if (data.type === 'message') {
         if (data.target === 'general') {
           if (currentChat === 'general') {
-            addMessageToChat(data.text, 'general');
+            addMessage(data.text, 'general');
             notifSound.play().catch(() => {});
           }
         } else {
           // Message privé
-          const room = data.target;
-          const otherUser = getOtherUser(room);
+          const otherUser = data.sender === user ? data.receiver : data.sender;
+          const room = getPrivateRoom(user, otherUser);
+          
+          // Marquer comme non lu si ce n'est pas la conversation active
+          if (currentChat !== room) {
+            unreadPrivateMessages.add(otherUser);
+          }
+          
           if (currentChat === room) {
-            addMessageToChat(data.text, 'private', otherUser);
+            addMessage(data.text, 'private', otherUser);
             notifSound.play().catch(() => {});
           }
+          updateUserList(getOnlineUsers()); // Met à jour les badges
         }
       }
       else if (data.type === 'clear_all') {
         if (currentChat === 'general') {
           chat.innerHTML = '';
-          alert('🗑️ La conversation générale a été effacée.');
+          alert('🗑️ La conversation a été effacée.');
         }
       }
       else if (data.type === 'typing') {
-        if (currentChat === `general` || currentChat === getPrivateRoom(user, data.user)) {
+        if (currentChat === 'general') {
           typingIndicator.textContent = `${data.user} est en train d’écrire...`;
         }
       }
@@ -101,12 +102,7 @@ function connectWebSocket() {
     }
   };
 
-  socket.onerror = (error) => {
-    console.error('❌ Erreur WebSocket:', error);
-  };
-
   socket.onclose = () => {
-    console.log('🔴 Connexion fermée');
     setTimeout(() => {
       if (user) connectWebSocket();
     }, 3000);
@@ -117,86 +113,112 @@ function getPrivateRoom(u1, u2) {
   return [u1, u2].sort().join('-');
 }
 
-function getOtherUser(room) {
-  const users = room.split('-');
-  return users[0] === user ? users[1] : users[0];
+function getOnlineUsers() {
+  const users = [];
+  document.querySelectorAll('.user-online').forEach(el => {
+    users.push(el.dataset.user);
+  });
+  return users;
 }
 
-function addUserToList(pseudo) {
-  // Éviter les doublons
-  if (document.querySelector(`[data-user="${pseudo}"]`)) return;
-  
-  const userItem = document.createElement('div');
-  userItem.className = 'user-item';
-  userItem.dataset.user = pseudo;
-  userItem.textContent = pseudo;
-  userItem.onclick = () => switchToPrivateChat(pseudo);
-  usersList.appendChild(userItem);
-}
-
-function removeUserFromList(pseudo) {
-  const userItem = document.querySelector(`[data-user="${pseudo}"]`);
-  if (userItem) userItem.remove();
-  
-  // Si la conversation active est avec cet utilisateur, revenir au général
-  if (currentChat === getPrivateRoom(user, pseudo)) {
-    switchToGeneral();
+function updateUserList(users) {
+  usersListEl.innerHTML = '';
+  if (users.length === 0) {
+    usersListEl.textContent = 'Aucun';
+    return;
   }
+
+  users.forEach(u => {
+    const span = document.createElement('span');
+    span.className = 'user-online';
+    span.dataset.user = u;
+    span.textContent = u;
+    span.style.cursor = 'pointer';
+    span.style.margin = '0 5px';
+    
+    // Badge rouge si message non lu
+    if (unreadPrivateMessages.has(u)) {
+      span.style.position = 'relative';
+      const badge = document.createElement('span');
+      badge.style.color = 'red';
+      badge.style.position = 'absolute';
+      badge.style.top = '-8px';
+      badge.style.right = '-10px';
+      badge.textContent = '•';
+      badge.style.fontSize = '1.5em';
+      span.appendChild(badge);
+    }
+
+    span.onclick = () => {
+      // Effacer le badge
+      unreadPrivateMessages.delete(u);
+      currentChat = getPrivateRoom(user, u);
+      chat.innerHTML = '';
+      chatHeader = `🔒 Conversation avec ${u}`;
+      updateUserList(users); // Rafraîchir la liste
+    };
+
+    usersListEl.appendChild(span);
+  });
 }
 
-function switchToGeneral() {
-  currentChat = 'general';
-  chatHeader.textContent = '💬 Général';
-  chat.innerHTML = '';
-  // Recharger historique général (optionnel)
-  document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
-  document.querySelector('[data-user="general"]').classList.add('active');
-}
+function addMessage(fullMessage, type, sender) {
+  if (!fullMessage || typeof fullMessage !== 'string') return;
 
-function switchToPrivateChat(target) {
-  currentChat = getPrivateRoom(user, target);
-  chatHeader.textContent = `🔒 Conversation privée avec ${target}`;
-  chat.innerHTML = '';
-  // Ici, tu pourrais charger l'historique privé (optionnel)
-  document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
-  const targetItem = document.querySelector(`[data-user="${target}"]`);
-  if (targetItem) targetItem.classList.add('active');
-}
-
-function addMessageToChat(fullMessage, type, sender) {
   const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${type === 'private' ? 'private' : ''}`;
+  messageDir.className = 'message';
   
-  // Déterminer si c'est ton message
-  const isOwn = fullMessage.includes(`] ${user}:`);
-  messageDiv.classList.add(isOwn ? 'own' : 'other');
-  
-  messageDiv.textContent = fullMessage;
+  const match = fullMessage.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
+  if (match) {
+    const senderName = match[1].split('] ')[1].replace(':', '');
+    const color = stringToColor(senderName);
+    messageDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]}`;
+  } else {
+    messageDiv.textContent = fullMessage;
+  }
+
+  // Médias (si présents dans le texte)
+  const urlRegex = /(https?:\/\/.*\.(?:png|jpg|jpeg|gif|mp4|webm))/gi;
+  const mediaMatch = fullMessage.match(urlRegex);
+  if (mediaMatch) {
+    const url = mediaMatch[0];
+    if (url.match(/\.(mp4|webm)$/)) {
+      messageDiv.innerHTML += `<br><video src="${url}" controls width="200"></video>`;
+    } else {
+      messageDiv.innerHTML += `<br><img src="${url}" style="max-width:200px;">`;
+    }
+  }
+
   chat.appendChild(messageDiv);
   chat.scrollTop = messageDiv.offsetTop;
+}
+
+function stringToColor(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  let color = '#';
+  for (let i = 0; i < 3; i++) {
+    const value = (hash >> (i * 8)) & 0xff;
+    color += ('00' + value.toString(16)).substr(-2);
+  }
+  return color;
 }
 
 function handleTyping() {
   if (!isTyping && user && currentChat === 'general') {
     isTyping = true;
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({
-        type: 'typing',
-        user: user
-      }));
+      socket.send(JSON.stringify({ type: 'typing', user: user }));
     }
   }
-  // Pour les conversations privées, on ne gère pas le typing (optionnel)
-  
   clearTimeout(typingTimer);
   typingTimer = setTimeout(() => {
     if (isTyping) {
       isTyping = false;
       if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          type: 'stop_typing',
-          user: user
-        }));
+        socket.send(JSON.stringify({ type: 'stop_typing', user: user }));
       }
     }
   }, 3000);
@@ -222,7 +244,7 @@ function sendMessage() {
       sender: user
     }));
   } else {
-    const otherUser = getOtherUser(currentChat);
+    const otherUser = currentChat.replace(user + '-', '').replace('-' + user, '');
     socket.send(JSON.stringify({
       type: 'message',
       text: fullMsg,
@@ -231,8 +253,5 @@ function sendMessage() {
     }));
   }
   msgInput.value = '';
-  typingIndicator.textContent = ''; // Effacer l'indicateur
+  typingIndicator.textContent = '';
 }
-
-// Éviter le drag/drop sur la liste des utilisateurs
-usersList.addEventListener('dragstart', (e) => e.preventDefault());
