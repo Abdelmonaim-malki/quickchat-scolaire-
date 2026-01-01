@@ -91,7 +91,14 @@ wss.on('connection', (socket) => {
         if (generalHistory.length > 100) generalHistory.shift();
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: 'message', text: parsed.text, target: 'general' }));
+            const payload = {
+              type: 'message',
+              text: parsed.text,
+              target: 'general'
+            };
+            if (parsed.media) payload.media = parsed.media;
+            if (parsed.audio) payload.audio = parsed.audio;
+            client.send(JSON.stringify(payload));
           }
         });
       }
@@ -105,14 +112,17 @@ wss.on('connection', (socket) => {
         // Envoyer aux deux utilisateurs
         clients.forEach((pseudo, clientSocket) => {
           if (pseudo === parsed.sender || pseudo === parsed.target) {
-            clientSocket.send(JSON.stringify({ 
-              type: 'message', 
+            const payload = {
+              type: 'message',
               text: parsed.text,
               target: privateRoom,
               isPrivate: true,
               sender: parsed.sender,
               receiver: parsed.target
-            }));
+            };
+            if (parsed.media) payload.media = parsed.media;
+            if (parsed.audio) payload.audio = parsed.audio;
+            clientSocket.send(JSON.stringify(payload));
           }
         });
       }
