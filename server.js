@@ -4,19 +4,20 @@ const fs = require('fs');
 const path = require('path');
 
 // Stockage des utilisateurs
-const clients = new Map(); // socket => { pseudo, socket }
+const clients = new Map(); // socket => pseudo
 
 // Historique général
 let generalHistory = [];
 
-// Historique des conversations privées : { "Ali-Sara": [msg1, msg2] }
+// Historique privé : { "Ali-Sara": [msg1, msg2] }
 let privateHistories = {};
 
 function getPrivateRoom(user1, user2) {
   return [user1, user2].sort().join('-');
 }
 
-const server = http.createServer((req, res) => {
+// Servir les fichiers statiques
+function serveStaticFile(req, res) {
   const url = req.url === '/' ? '/index.html' : req.url;
   const filePath = path.join(__dirname, url);
 
@@ -43,6 +44,10 @@ const server = http.createServer((req, res) => {
       res.end(data);
     }
   });
+}
+
+const server = http.createServer((req, res) => {
+  serveStaticFile(req, res);
 });
 
 const PORT = process.env.PORT || 3000;
@@ -55,21 +60,25 @@ const wss = new WebSocket.Server({ server });
 wss.on('connection', (socket) => {
   console.log('👤 Nouvel utilisateur connecté');
 
-  // Envoyer historique général et liste des utilisateurs
-  socket.send(JSON.stringify({ type: 'init', history: generalHistory, users: Array.from(clients.values()).map(c => c.pseudo) }));
-
   socket.on('message', (data) => {
     try {
       const parsed = JSON.parse(data);
       
-      // Authentification (premier message)
+      // Authentification
       if (parsed.type === 'auth') {
         const pseudo = parsed.pseudo;
-        clients.set(socket, { pseudo, socket });
+        clients.set(socket, pseudo);
         
-        // Annoncer à tous que l'utilisateur est en ligne
+        // Envoyer historique général + liste des utilisateurs
+        socket.send(JSON.stringify({ 
+          type: 'init', 
+          history: generalHistory, 
+          users: Array.from(clients.values()).filter(u => u !== pseudo) 
+        }));
+        
+        // Annoncer à tous
         wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
+          if (client !== socket && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({ type: 'user_join', user: pseudo }));
           }
         });
@@ -93,31 +102,35 @@ wss.on('connection', (socket) => {
         privateHistories[privateRoom].push(parsed.text);
         if (privateHistories[privateRoom].length > 100) privateHistories[privateRoom].shift();
 
-        // Envoyer seulement aux deux utilisateurs
-        clients.forEach(client => {
-          if (client.pseudo === parsed.sender || client.pseudo === parsed.target) {
-            client.socket.send(JSON.stringify({ 
+        // Envoyer aux deux utilisateurs
+        clients.forEach((pseudo, clientSocket) => {
+          if (pseudo === parsed.sender || pseudo === parsed.target) {
+            clientSocket.send(JSON.stringify({ 
               type: 'message', 
               text: parsed.text,
               target: privateRoom,
-              isPrivate: true
+              isPrivate: true,
+              sender: parsed.sender,
+              receiver: parsed.target
             }));
           }
         });
       }
-      // Suppression globale (dans le général seulement)
+      // Suppression globale
       else if (parsed.type === 'message' && parsed.text.includes('remove conv from all')) {
-        const parts = parsed.text.split(': ');
-        if (parsed.target === 'general' && parts.length >= 2) {
-          const messageContent = parts.slice(1).join(': ').trim();
-          if (messageContent === 'remove conv from all') {
-            generalHistory = [];
-            wss.clients.forEach(client => {
-              if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({ type: 'clear_all' }));
-              }
-            });
-            return;
+        if (parsed.target === 'general') {
+          const parts = parsed.text.split(': ');
+          if (parts.length >= 2) {
+            const messageContent = parts.slice(1).join(': ').trim();
+            if (messageContent === 'remove conv from all') {
+              generalHistory = [];
+              wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                  client.send(JSON.stringify({ type: 'clear_all' }));
+                }
+              });
+              return;
+            }
           }
         }
       }
@@ -127,13 +140,13 @@ wss.on('connection', (socket) => {
   });
 
   socket.on('close', () => {
-    const client = clients.get(socket);
-    if (client) {
+    const pseudo = clients.get(socket);
+    if (pseudo) {
       clients.delete(socket);
-      // Annoncer que l'utilisateur est parti
+      // Annoncer le départ
       wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify({ type: 'user_leave', user: client.pseudo }));
+          client.send(JSON.stringify({ type: 'user_leave', user: pseudo }));
         }
       });
     }
