@@ -1,12 +1,11 @@
 let user = '';
-let currentChat = 'general'; // 'general' ou 'user1-user2'
+let currentChat = 'general';
 let socket = null;
 let typingTimer = null;
 let isTyping = false;
-let unreadPrivateMessages = new Set(); // Pour les badges rouges
-const privateHistories = {}; // { "Ali-Sara": [msg1, msg2] }
+let unreadPrivateMessages = new Set();
+const privateHistories = {};
 
-// Éléments DOM
 const loginScreen = document.getElementById('loginScreen');
 const chatApp = document.getElementById('chatApp');
 const pseudoInput = document.getElementById('pseudoInput');
@@ -25,7 +24,6 @@ const notifSound = document.getElementById('notif-sound');
 let mediaRecorder;
 let audioChunks = [];
 
-// Événements
 loginBtn.addEventListener('click', handleLogin);
 msgInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') sendMessage();
@@ -61,9 +59,7 @@ function connectWebSocket() {
       const data = JSON.parse(e.data);
       
       if (data.type === 'init') {
-        // Historique général
         data.history.forEach(msg => addMessage(msg, 'general'));
-        // Liste des utilisateurs
         updateUserList(data.users);
       }
       else if (data.type === 'user_join') {
@@ -75,22 +71,23 @@ function connectWebSocket() {
       else if (data.type === 'message') {
         if (data.target === 'general') {
           if (currentChat === 'general') {
-            addMessage(data.text, 'general');
+            addMessage(data.text, 'general', null, data.audio, data.media);
             notifSound.play().catch(() => {});
           }
         } else {
-          // Message privé
           const otherUser = data.sender === user ? data.receiver : data.sender;
           const room = getPrivateRoom(user, otherUser);
           
-          // Sauvegarder dans l'historique local
           if (!privateHistories[room]) privateHistories[room] = [];
-          privateHistories[room].push(data.text);
+          privateHistories[room].push({
+            text: data.text,
+            audio: data.audio,
+            media: data.media
+          });
           
           if (currentChat === room) {
-            addMessage(data.text, 'private', otherUser);
+            addMessage(data.text, 'private', otherUser, data.audio, data.media);
             notifSound.play().catch(() => {});
-            // 🔸 Effacer le badge SEULEMENT ici
             unreadPrivateMessages.delete(otherUser);
           } else {
             unreadPrivateMessages.add(otherUser);
@@ -101,7 +98,9 @@ function connectWebSocket() {
       else if (data.type === 'private_history') {
         if (currentChat === data.room) {
           const otherUser = getOtherUser(data.room);
-          data.history.forEach(msg => addMessage(msg, 'private', otherUser));
+          data.history.forEach(item => {
+            addMessage(item.text, 'private', otherUser, item.audio, item.media);
+          });
           privateHistories[data.room] = data.history;
         }
       }
@@ -163,7 +162,6 @@ function updateUserList(users) {
     span.style.cursor = 'pointer';
     span.style.margin = '0 3px';
     
-    // Badge rouge si message non lu
     if (unreadPrivateMessages.has(u)) {
       span.style.position = 'relative';
       const badge = document.createElement('span');
@@ -177,7 +175,6 @@ function updateUserList(users) {
     }
 
     span.onclick = () => {
-      // 🔸 Ne PAS effacer le badge ici
       switchToPrivateChat(u);
     };
 
@@ -196,26 +193,20 @@ function updateHeader() {
 function switchToGeneral() {
   currentChat = 'general';
   chat.innerHTML = '';
-  // Recharger historique général
-  loadGeneralHistory();
   updateHeader();
   updateUserList(getOnlineUsers());
-}
-
-function loadGeneralHistory() {
-  // L'historique général est déjà chargé au démarrage
 }
 
 function switchToPrivateChat(targetUser) {
   currentChat = getPrivateRoom(user, targetUser);
   chat.innerHTML = '';
   
-  // Charger historique privé
   const room = currentChat;
   if (privateHistories[room] && privateHistories[room].length > 0) {
-    privateHistories[room].forEach(msg => addMessage(msg, 'private', targetUser));
+    privateHistories[room].forEach(item => {
+      addMessage(item.text, 'private', targetUser, item.audio, item.media);
+    });
   } else {
-    // Demander l'historique au serveur
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({
         type: 'get_private_history',
@@ -228,7 +219,7 @@ function switchToPrivateChat(targetUser) {
   updateUserList(getOnlineUsers());
 }
 
-function addMessage(fullMessage, type, sender) {
+function addMessage(fullMessage, type, sender, audioData, mediaData) {
   if (!fullMessage || typeof fullMessage !== 'string') return;
 
   const messageDiv = document.createElement('div');
@@ -243,26 +234,40 @@ function addMessage(fullMessage, type, sender) {
     messageDiv.textContent = fullMessage;
   }
 
-  // Médias
-  const urlRegex = /(https?:\/\/.*\.(?:png|jpg|jpeg|gif|mp4|webm))/gi;
-  const mediaMatch = fullMessage.match(urlRegex);
-  if (mediaMatch) {
-    const url = mediaMatch[0];
-    if (url.match(/\.(mp4|webm)$/)) {
-      messageDiv.innerHTML += `<br><video src="${url}" controls width="200"></video>`;
-    } else {
-      messageDiv.innerHTML += `<br><img src="${url}" style="max-width:200px;">`;
-    }
+  if (audioData) {
+    const audioElement = document.createElement('audio');
+    audioElement.controls = true;
+    audioElement.style.width = '100%';
+    audioElement.src = audioData;
+    messageDiv.appendChild(document.createElement('br'));
+    messageDiv.appendChild(audioElement);
   }
 
-  // 🔸 Menu ⋮ — SEULEMENT pour les messages de l'utilisateur
-  if (type !== 'private' || sender === user) {
+  if (mediaData) {
+    const isVideo = mediaData.includes('video/');
+    const mediaElement = isVideo 
+      ? document.createElement('video') 
+      : document.createElement('img');
+    if (isVideo) {
+      mediaElement.controls = true;
+      mediaElement.style.width = '200px';
+    } else {
+      mediaElement.style.maxWidth = '200px';
+      mediaElement.style.borderRadius = '5px';
+    }
+    mediaElement.src = mediaData;
+    messageDiv.appendChild(document.createElement('br'));
+    messageDiv.appendChild(mediaElement);
+  }
+
+  const isOwnMessage = fullMessage.includes(`] ${user}:`);
+  if (isOwnMessage) {
     const dots = document.createElement('span');
     dots.className = 'dots';
     dots.innerHTML = '⋮';
     dots.onclick = (e) => {
       e.stopPropagation();
-      showActionsMenu(messageDiv, fullMessage, sender);
+      showActionsMenu(messageDiv, fullMessage);
     };
     messageDiv.appendChild(dots);
   }
@@ -284,14 +289,20 @@ function stringToColor(str) {
   return color;
 }
 
-function showActionsMenu(messageDiv, fullMessage, sender) {
-  // Cacher les autres menus
+function showActionsMenu(messageDiv, fullMessage) {
   document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
 
   const menu = document.createElement('div');
   menu.className = 'message-actions-menu';
   
-  // Option 1: Supprimer pour moi
+  const editBtn = document.createElement('button');
+  editBtn.innerHTML = '✏️ Modifier';
+  editBtn.onclick = () => {
+    editMessage(messageDiv, fullMessage);
+    menu.remove();
+  };
+  menu.appendChild(editBtn);
+
   const deleteForMe = document.createElement('button');
   deleteForMe.innerHTML = '🗑️ Supprimer pour moi';
   deleteForMe.onclick = () => {
@@ -300,11 +311,10 @@ function showActionsMenu(messageDiv, fullMessage, sender) {
   };
   menu.appendChild(deleteForMe);
 
-  // Option 2: Supprimer pour tous
   const deleteForAll = document.createElement('button');
   deleteForAll.innerHTML = '🌍 Supprimer pour tous';
   deleteForAll.onclick = () => {
-    if (confirm('Supprimer ce message pour TOUS les utilisateurs ?')) {
+    if (confirm('Supprimer ce message pour TOUS ?')) {
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
           type: 'delete_for_all',
@@ -312,15 +322,12 @@ function showActionsMenu(messageDiv, fullMessage, sender) {
           originalPrefix: fullMessage.split('] ')[0] + '] '
         }));
         messageDiv.remove();
-      } else {
-        alert('Connexion perdue.');
       }
     }
     menu.remove();
   };
   menu.appendChild(deleteForAll);
 
-  // Option 3: Fermer
   const closeBtn = document.createElement('button');
   closeBtn.innerHTML = '❌ Fermer';
   closeBtn.onclick = () => {
@@ -330,6 +337,27 @@ function showActionsMenu(messageDiv, fullMessage, sender) {
 
   messageDiv.appendChild(menu);
   menu.style.display = 'block';
+}
+
+function editMessage(messageDiv, oldMessage) {
+  const content = oldMessage.split(': ').slice(1).join(': ');
+  const newText = prompt('Modifier le message :', content);
+  if (newText !== null && newText.trim() !== '') {
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const updatedMsg = oldMessage.replace(/: .*/, `: ${newText.trim()}`);
+    
+    if (currentChat === 'general') {
+      sendMessageRaw(updatedMsg);
+    } else {
+      const otherUser = getOtherUser(currentChat);
+      sendMessageRaw(updatedMsg, otherUser);
+    }
+    
+    const match = updatedMsg.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
+    if (match) {
+      messageDiv.innerHTML = `<span class="sender" style="color:${stringToColor(match[1].split('] ')[1].replace(':', ''))}">${match[1]}</span> ${match[2]} <span style="font-size:0.8em;color:#666;">(✏️ modifié)</span>`;
+    }
+  }
 }
 
 function handleTyping() {
@@ -359,8 +387,8 @@ function sendMessage() {
   const msg = msgInput.value.trim();
   if (!msg) return;
 
-  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const fullMsg = `[${time}] ${user}: ${msg}`;
+  const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fullMsg = `[${t}] ${user}: ${msg}`;
 
   if (currentChat === 'general') {
     sendMessageRaw(fullMsg);
@@ -418,10 +446,10 @@ function startRecording() {
           const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
           if (currentChat === 'general') {
-            sendMessageRaw(msg);
+            sendMessageRaw(msg, null, reader.result);
           } else {
             const otherUser = getOtherUser(currentChat);
-            sendMessageRaw(msg, otherUser);
+            sendMessageRaw(msg, otherUser, reader.result);
           }
         };
         reader.readAsDataURL(audioBlob);
@@ -448,10 +476,10 @@ function sendFile() {
     const mediaTag = file.type.startsWith('video') ? '🎥' : '🖼️';
     const msg = `[${t}] ${user}: ${mediaTag} [Média]`;
     if (currentChat === 'general') {
-      sendMessageRaw(msg);
+      sendMessageRaw(msg, null, null, e.target.result);
     } else {
       const otherUser = getOtherUser(currentChat);
-      sendMessageRaw(msg, otherUser);
+      sendMessageRaw(msg, otherUser, null, e.target.result);
     }
     fileInput.value = '';
   };
