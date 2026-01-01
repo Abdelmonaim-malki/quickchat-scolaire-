@@ -52,7 +52,7 @@ body {
   border-radius: 10px;
 }
 
-/* 🔸 En-tête avec liste des utilisateurs */
+/* 🔸 En-tête avec actions */
 .header {
   display: flex;
   justify-content: space-between;
@@ -64,6 +64,25 @@ body {
 .header h2 {
   margin: 0;
   color: #333;
+}
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#backToGeneralBtn {
+  background: #999;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+#backToGeneralBtn:hover {
+  background: #777;
 }
 
 /* 🔸 Liste des utilisateurs en ligne */
@@ -114,10 +133,11 @@ body {
 .sender {
   font-weight: bold;
 }
-#chat img, #chat video {
+#chat img, #chat video, #chat audio {
   max-width: 200px;
   border-radius: 5px;
   margin-top: 5px;
+  width: 100%;
 }
 
 /* Indicateur de saisie */
@@ -134,8 +154,8 @@ body {
   display: flex;
   gap: 8px;
   margin-top: 12px;
-  flex-wrap: nowrap; /* Empêche le retour à la ligne */
-  overflow-x: auto; /* Défilement horizontal si besoin */
+  flex-wrap: nowrap;
+  overflow-x: auto;
   padding: 5px 0;
 }
 #msg {
@@ -156,7 +176,7 @@ body {
   cursor: pointer;
   font-size: 14px;
   white-space: nowrap;
-  flex-shrink: 0; /* Empêche la compression */
+  flex-shrink: 0;
 }
 #backToGeneralBtn {
   background: #999;
@@ -168,7 +188,7 @@ body {
   flex-shrink: 0;
 }
 
-/* Responsive — ajustement pour très petit écran */
+/* Responsive */
 @media (max-width: 400px) {
   .input-area {
     gap: 5px;
@@ -180,7 +200,6 @@ body {
   #msg {
     font-size: 13px;
   }
-  /* 🔸 Texte plus petit sur mobile */
   .message {
     font-size: 0.9em;
   }
