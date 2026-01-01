@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>QuickChat - Projet Ultime</title>
+  <title>QuickChat - Général</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
 </head>
 <body>
   <div class="header">
@@ -13,6 +13,12 @@
     <div class="clear-btns" id="clearButtons" style="display:none;">
       <button id="clearMineBtn">🗑️ Effacer mes messages</button>
     </div>
+  </div>
+
+  <!-- 🔹 Liste des utilisateurs en ligne -->
+  <div class="online-panel" id="onlinePanel" style="display:none;">
+    <h4>👥 En ligne (<span id="onlineCount">0</span>)</h4>
+    <ul id="onlineList"></ul>
   </div>
   
   <div class="login-screen" id="loginScreen">
@@ -38,6 +44,6 @@
 
   <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
   
-  <script src="script.js"></script>
+  <script src="chat.js"></script>
 </body>
 </html>
