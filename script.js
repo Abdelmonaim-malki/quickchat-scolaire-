@@ -1,119 +1,79 @@
 let user = '';
-let currentChat = 'general';
+let mediaRecorder;
+let audioChunks = [];
 let socket = null;
 let typingTimer = null;
 let isTyping = false;
-let unreadPrivateMessages = new Set();
-const privateHistories = {};
 
+// Éléments DOM
 const loginScreen = document.getElementById('loginScreen');
 const chatApp = document.getElementById('chatApp');
-const pseudoInput = document.getElementById('pseudoInput');
-const loginBtn = document.getElementById('loginBtn');
-const chat = document.getElementById('chat');
+const pseudoInput = document.getElementById('pseudo');
 const msgInput = document.getElementById('msg');
+const chatDiv = document.getElementById('chat');
+const typingIndicator = document.getElementById('typingIndicator');
+const clearMineBtn = document.getElementById('clearMineBtn');
+const joinBtn = document.getElementById('joinBtn');
 const sendBtn = document.getElementById('sendBtn');
 const recordBtn = document.getElementById('recordBtn');
 const fileInput = document.getElementById('fileInput');
 const fileBtn = document.getElementById('fileBtn');
-const backToGeneralBtn = document.getElementById('backToGeneralBtn');
-const typingIndicator = document.getElementById('typingIndicator');
-const usersListEl = document.getElementById('usersList');
 const notifSound = document.getElementById('notif-sound');
 
-let mediaRecorder;
-let audioChunks = [];
-
-loginBtn.addEventListener('click', handleLogin);
+// Événements
+joinBtn.addEventListener('click', join);
+sendBtn.addEventListener('click', send);
 msgInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') sendMessage();
+  if (e.key === 'Enter') send();
 });
 msgInput.addEventListener('input', handleTyping);
-sendBtn.addEventListener('click', sendMessage);
+clearMineBtn.addEventListener('click', clearMine);
 recordBtn.addEventListener('click', toggleRecording);
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', sendFile);
-backToGeneralBtn.addEventListener('click', switchToGeneral);
 
-function handleLogin() {
-  const pseudo = pseudoInput.value.trim();
-  if (pseudo && pseudo.length >= 2) {
-    user = pseudo;
-    loginScreen.style.display = 'none';
-    chatApp.style.display = 'block';
-    connectWebSocket();
-  } else {
-    alert('Pseudo invalide (min. 2 caractères).');
-  }
-}
-
+// Fonctions
 function connectWebSocket() {
   socket = new WebSocket('wss://' + window.location.host);
   
   socket.onopen = () => {
-    socket.send(JSON.stringify({ type: 'auth', pseudo: user }));
+    console.log('🟢 Connecté au serveur');
   };
 
   socket.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      
-      if (data.type === 'init') {
-        data.history.forEach(msg => addMessage(msg, 'general'));
-        updateUserList(data.users);
-      }
-      else if (data.type === 'user_join') {
-        updateUserList(Array.from(new Set([...getOnlineUsers(), data.user])));
-      }
-      else if (data.type === 'user_leave') {
-        updateUserList(getOnlineUsers().filter(u => u !== data.user));
-      }
+      if (data.type === 'history') {
+        chatDiv.innerHTML = '';
+        data.messages.forEach(msg => displayMessage(msg));
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+      } 
       else if (data.type === 'message') {
-        if (data.target === 'general') {
-          if (currentChat === 'general') {
-            addMessage(data.text, 'general', null, data.audio, data.media);
-            notifSound.play().catch(() => {});
+        displayMessage(data.text, data.id, data.timestamp, data.media, data.audio);
+        notifSound.play().catch(() => {});
+        typingIndicator.textContent = '';
+      }
+      else if (data.type === 'edit') {
+        const msgDiv = document.querySelector(`.message[data-id="${data.id}"]`);
+        if (msgDiv) {
+          const sender = extractSender(data.text);
+          const color = stringToColor(sender);
+          const match = data.text.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
+          if (match) {
+            msgDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]} <span class="edited">(✏️ modifié)</span>`;
           }
-        } else {
-          const otherUser = data.sender === user ? data.receiver : data.sender;
-          const room = getPrivateRoom(user, otherUser);
-          
-          if (!privateHistories[room]) privateHistories[room] = [];
-          privateHistories[room].push({
-            text: data.text,
-            audio: data.audio,
-            media: data.media
-          });
-          
-          if (currentChat === room) {
-            addMessage(data.text, 'private', otherUser, data.audio, data.media);
-            notifSound.play().catch(() => {});
-            unreadPrivateMessages.delete(otherUser);
-          } else {
-            unreadPrivateMessages.add(otherUser);
-          }
-          updateUserList(getOnlineUsers());
         }
       }
-      else if (data.type === 'private_history') {
-        if (currentChat === data.room) {
-          const otherUser = getOtherUser(data.room);
-          data.history.forEach(item => {
-            addMessage(item.text, 'private', otherUser, item.audio, item.media);
-          });
-          privateHistories[data.room] = data.history;
-        }
+      else if (data.type === 'delete_message') {
+        const msgDiv = document.querySelector(`.message[data-id="${data.id}"]`);
+        if (msgDiv) msgDiv.remove();
       }
       else if (data.type === 'clear_all') {
-        if (currentChat === 'general') {
-          chat.innerHTML = '';
-          alert('🗑️ La conversation a été effacée.');
-        }
+        chatDiv.innerHTML = '';
+        alert('🗑️ La conversation a été effacée par un utilisateur.');
       }
       else if (data.type === 'typing') {
-        if (currentChat === 'general') {
-          typingIndicator.textContent = `${data.user} est en train d’écrire...`;
-        }
+        typingIndicator.textContent = data.user + ' est en train d’écrire...';
       }
       else if (data.type === 'stop_typing') {
         typingIndicator.textContent = '';
@@ -123,157 +83,16 @@ function connectWebSocket() {
     }
   };
 
+  socket.onerror = (error) => {
+    console.error('❌ Erreur WebSocket:', error);
+  };
+
   socket.onclose = () => {
+    console.log('🔴 Connexion fermée');
     setTimeout(() => {
       if (user) connectWebSocket();
     }, 3000);
   };
-}
-
-function getPrivateRoom(u1, u2) {
-  return [u1, u2].sort().join('-');
-}
-
-function getOtherUser(room) {
-  const users = room.split('-');
-  return users[0] === user ? users[1] : users[0];
-}
-
-function getOnlineUsers() {
-  const users = [];
-  document.querySelectorAll('.user-online').forEach(el => {
-    users.push(el.dataset.user);
-  });
-  return users;
-}
-
-function updateUserList(users) {
-  usersListEl.innerHTML = '';
-  if (users.length === 0) {
-    usersListEl.textContent = 'Aucun';
-    return;
-  }
-
-  users.forEach(u => {
-    const span = document.createElement('span');
-    span.className = 'user-online';
-    span.dataset.user = u;
-    span.textContent = u;
-    span.style.cursor = 'pointer';
-    span.style.margin = '0 3px';
-    
-    if (unreadPrivateMessages.has(u)) {
-      span.style.position = 'relative';
-      const badge = document.createElement('span');
-      badge.style.color = 'red';
-      badge.style.position = 'absolute';
-      badge.style.top = '-8px';
-      badge.style.right = '-10px';
-      badge.textContent = '•';
-      badge.style.fontSize = '1.5em';
-      span.appendChild(badge);
-    }
-
-    span.onclick = () => {
-      switchToPrivateChat(u);
-    };
-
-    usersListEl.appendChild(span);
-  });
-}
-
-function updateHeader() {
-  if (currentChat === 'general') {
-    backToGeneralBtn.style.display = 'none';
-  } else {
-    backToGeneralBtn.style.display = 'inline-block';
-  }
-}
-
-function switchToGeneral() {
-  currentChat = 'general';
-  chat.innerHTML = '';
-  updateHeader();
-  updateUserList(getOnlineUsers());
-}
-
-function switchToPrivateChat(targetUser) {
-  currentChat = getPrivateRoom(user, targetUser);
-  chat.innerHTML = '';
-  
-  const room = currentChat;
-  if (privateHistories[room] && privateHistories[room].length > 0) {
-    privateHistories[room].forEach(item => {
-      addMessage(item.text, 'private', targetUser, item.audio, item.media);
-    });
-  } else {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({
-        type: 'get_private_history',
-        room: room
-      }));
-    }
-  }
-  
-  updateHeader();
-  updateUserList(getOnlineUsers());
-}
-
-function addMessage(fullMessage, type, sender, audioData, mediaData) {
-  if (!fullMessage || typeof fullMessage !== 'string') return;
-
-  const messageDiv = document.createElement('div');
-  messageDiv.className = 'message';
-  
-  const match = fullMessage.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
-  if (match) {
-    const senderName = match[1].split('] ')[1].replace(':', '');
-    const color = stringToColor(senderName);
-    messageDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]}`;
-  } else {
-    messageDiv.textContent = fullMessage;
-  }
-
-  if (audioData) {
-    const audioElement = document.createElement('audio');
-    audioElement.controls = true;
-    audioElement.style.width = '100%';
-    audioElement.src = audioData;
-    messageDiv.appendChild(document.createElement('br'));
-    messageDiv.appendChild(audioElement);
-  }
-
-  if (mediaData) {
-    const isVideo = mediaData.includes('video/');
-    const mediaElement = isVideo 
-      ? document.createElement('video') 
-      : document.createElement('img');
-    if (isVideo) {
-      mediaElement.controls = true;
-      mediaElement.style.width = '200px';
-    } else {
-      mediaElement.style.maxWidth = '200px';
-      mediaElement.style.borderRadius = '5px';
-    }
-    mediaElement.src = mediaData;
-    messageDiv.appendChild(document.createElement('br'));
-    messageDiv.appendChild(mediaElement);
-  }
-
-  const isOwnMessage = fullMessage.includes(`] ${user}:`);
-  if (isOwnMessage) {
-    const dots = document.createElement('span');
-    dots.className = 'dots';
-    dots.innerHTML = '⋮';
-    dots.onclick = (e) => {
-      e.stopPropagation();
-      showActionsMenu(messageDiv, fullMessage);
-    };
-    messageDiv.appendChild(dots);
-  }
-
-  chat.appendChild(messageDiv);
-  chat.scrollTop = messageDiv.offsetTop;
 }
 
 function stringToColor(str) {
@@ -289,20 +108,86 @@ function stringToColor(str) {
   return color;
 }
 
-function showActionsMenu(messageDiv, fullMessage) {
+function extractSender(message) {
+  const match = message.match(/^\[.*?\]\s*(.*?):/);
+  return match ? match[1] : 'Inconnu';
+}
+
+function displayMessage(fullMessage, id, timestamp, mediaData, audioData) {
+  if (!fullMessage || typeof fullMessage !== 'string') {
+    console.warn('Message invalide reçu:', fullMessage);
+    return;
+  }
+
+  const messageDiv = document.createElement('div');
+  messageDiv.className = 'message';
+  if (id) messageDiv.dataset.id = id;
+  if (timestamp) messageDiv.dataset.timestamp = timestamp;
+
+  const sender = extractSender(fullMessage);
+  const color = stringToColor(sender);
+  const match = fullMessage.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
+  
+  if (match) {
+    messageDiv.innerHTML = `<span class="sender" style="color:${color}">${match[1]}</span> ${match[2]}`;
+  } else {
+    messageDiv.textContent = fullMessage;
+  }
+
+  if (audioData) {
+    const audioElement = document.createElement('audio');
+    audioElement.controls = true;
+    audioElement.style.width = '100%';
+    audioElement.src = audioData;
+    messageDiv.appendChild(document.createElement('br'));
+    messageDiv.appendChild(audioElement);
+  }
+  if (mediaData) {
+    const isVideo = mediaData.includes('video/');
+    const mediaElement = isVideo 
+      ? document.createElement('video') 
+      : document.createElement('img');
+    if (isVideo) {
+      mediaElement.controls = true;
+      mediaElement.style.width = '250px';
+    } else {
+      mediaElement.style.maxWidth = '250px';
+      mediaElement.style.borderRadius = '8px';
+    }
+    mediaElement.src = mediaData;
+    messageDiv.appendChild(document.createElement('br'));
+    messageDiv.appendChild(mediaElement);
+  }
+
+  if (timestamp && Date.now() - timestamp < 5 * 60 * 1000 && sender === user) {
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const safeMsg = fullMessage.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+    actions.innerHTML = `<button onclick="editMessage('${id}', \`${safeMsg}\`)">✏️ Modifier</button>`;
+    messageDiv.appendChild(actions);
+  }
+
+  if (sender === user) {
+    const dots = document.createElement('span');
+    dots.className = 'dots';
+    dots.innerHTML = '⋮';
+    dots.onclick = (e) => {
+      e.stopPropagation();
+      showActionsMenu(messageDiv, id, fullMessage);
+    };
+    messageDiv.appendChild(dots);
+  }
+
+  chatDiv.appendChild(messageDiv);
+  chatDiv.scrollTop = messageDiv.offsetTop;
+}
+
+function showActionsMenu(messageDiv, messageId, fullMessage) {
   document.querySelectorAll('.message-actions-menu').forEach(el => el.remove());
 
   const menu = document.createElement('div');
   menu.className = 'message-actions-menu';
   
-  const editBtn = document.createElement('button');
-  editBtn.innerHTML = '✏️ Modifier';
-  editBtn.onclick = () => {
-    editMessage(messageDiv, fullMessage);
-    menu.remove();
-  };
-  menu.appendChild(editBtn);
-
   const deleteForMe = document.createElement('button');
   deleteForMe.innerHTML = '🗑️ Supprimer pour moi';
   deleteForMe.onclick = () => {
@@ -314,14 +199,16 @@ function showActionsMenu(messageDiv, fullMessage) {
   const deleteForAll = document.createElement('button');
   deleteForAll.innerHTML = '🌍 Supprimer pour tous';
   deleteForAll.onclick = () => {
-    if (confirm('Supprimer ce message pour TOUS ?')) {
+    if (confirm('Supprimer ce message pour TOUS les utilisateurs ?')) {
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
           type: 'delete_for_all',
-          id: Date.now(),
+          id: messageId,
           originalPrefix: fullMessage.split('] ')[0] + '] '
         }));
         messageDiv.remove();
+      } else {
+        alert('Connexion perdue.');
       }
     }
     menu.remove();
@@ -339,87 +226,21 @@ function showActionsMenu(messageDiv, fullMessage) {
   menu.style.display = 'block';
 }
 
-function editMessage(messageDiv, oldMessage) {
-  const content = oldMessage.split(': ').slice(1).join(': ');
+function editMessage(id, fullMessage) {
+  const content = fullMessage.split(': ').slice(1).join(': ');
   const newText = prompt('Modifier le message :', content);
   if (newText !== null && newText.trim() !== '') {
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const updatedMsg = oldMessage.replace(/: .*/, `: ${newText.trim()}`);
-    
-    if (currentChat === 'general') {
-      sendMessageRaw(updatedMsg);
-    } else {
-      const otherUser = getOtherUser(currentChat);
-      sendMessageRaw(updatedMsg, otherUser);
-    }
-    
-    const match = updatedMsg.match(/(\[.*?\]\s*.*?:)\s*(.*)/);
-    if (match) {
-      messageDiv.innerHTML = `<span class="sender" style="color:${stringToColor(match[1].split('] ')[1].replace(':', ''))}">${match[1]}</span> ${match[2]} <span style="font-size:0.8em;color:#666;">(✏️ modifié)</span>`;
-    }
-  }
-}
-
-function handleTyping() {
-  if (!isTyping && user && currentChat === 'general') {
-    isTyping = true;
+    const updatedMsg = fullMessage.replace(/: .*/, `: ${newText.trim()}`);
+    const prefix = fullMessage.split('] ')[0] + '] ';
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: 'typing', user: user }));
+      socket.send(JSON.stringify({
+        type: 'edit',
+        id: id,
+        text: updatedMsg,
+        originalPrefix: prefix
+      }));
     }
-  }
-  clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => {
-    if (isTyping) {
-      isTyping = false;
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'stop_typing', user: user }));
-      }
-    }
-  }, 3000);
-}
-
-function sendMessage() {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    alert('Connexion perdue.');
-    return;
-  }
-
-  const msg = msgInput.value.trim();
-  if (!msg) return;
-
-  const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const fullMsg = `[${t}] ${user}: ${msg}`;
-
-  if (currentChat === 'general') {
-    sendMessageRaw(fullMsg);
-  } else {
-    const otherUser = getOtherUser(currentChat);
-    sendMessageRaw(fullMsg, otherUser);
-  }
-  msgInput.value = '';
-  typingIndicator.textContent = '';
-}
-
-function sendMessageRaw(fullMsg, targetUser = null) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    alert('Connexion perdue.');
-    return;
-  }
-
-  if (targetUser) {
-    socket.send(JSON.stringify({
-      type: 'message',
-      text: fullMsg,
-      target: targetUser,
-      sender: user
-    }));
-  } else {
-    socket.send(JSON.stringify({
-      type: 'message',
-      text: fullMsg,
-      target: 'general',
-      sender: user
-    }));
   }
 }
 
@@ -445,11 +266,15 @@ function startRecording() {
         reader.onload = () => {
           const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           const msg = `[${t}] ${user}: 🎧 [Message vocal]`;
-          if (currentChat === 'general') {
-            sendMessageRaw(msg, null, reader.result);
-          } else {
-            const otherUser = getOtherUser(currentChat);
-            sendMessageRaw(msg, otherUser, reader.result);
+          const id = `${user}-${Date.now()}-audio-${Math.random().toString(36).substr(2, 5)}`;
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'message',
+              text: msg,
+              id: id,
+              timestamp: Date.now(),
+              audio: reader.result
+            }));
           }
         };
         reader.readAsDataURL(audioBlob);
@@ -475,13 +300,90 @@ function sendFile() {
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const mediaTag = file.type.startsWith('video') ? '🎥' : '🖼️';
     const msg = `[${t}] ${user}: ${mediaTag} [Média]`;
-    if (currentChat === 'general') {
-      sendMessageRaw(msg, null, null, e.target.result);
-    } else {
-      const otherUser = getOtherUser(currentChat);
-      sendMessageRaw(msg, otherUser, null, e.target.result);
+    const id = `${user}-${Date.now()}-media-${Math.random().toString(36).substr(2, 5)}`;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'message',
+        text: msg,
+        id: id,
+        timestamp: Date.now(),
+        media: e.target.result
+      }));
     }
     fileInput.value = '';
   };
   reader.readAsDataURL(file);
+}
+
+function clearMine() {
+  if (confirm('Effacer l’historique DE CE navigateur ?')) {
+    chatDiv.innerHTML = '';
+  }
+}
+
+function join() {
+  const p = pseudoInput.value.trim();
+  if (p && p.length >= 2) {
+    user = p;
+    loginScreen.style.display = 'none';
+    chatApp.style.display = 'block';
+    clearMineBtn.style.display = 'inline-block';
+    connectWebSocket();
+  } else {
+    alert('Pseudo invalide (min. 2 caractères).');
+  }
+}
+
+function send() {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    alert('Connexion perdue. Veuillez rafraîchir la page.');
+    return;
+  }
+
+  const m = msgInput.value.trim();
+  if (m && user) {
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const fullMsg = `[${t}] ${user}: ${m}`;
+    const id = `${user}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    socket.send(JSON.stringify({ 
+      type: 'message', 
+      text: fullMsg,
+      id: id,
+      timestamp: Date.now()
+    }));
+    msgInput.value = '';
+    if (isTyping) {
+      isTyping = false;
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'stop_typing',
+          user: user
+        }));
+      }
+    }
+  }
+}
+
+function handleTyping() {
+  if (!isTyping && user) {
+    isTyping = true;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'typing',
+        user: user
+      }));
+    }
+  }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    if (isTyping) {
+      isTyping = false;
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'stop_typing',
+          user: user
+        }));
+      }
+    }
+  }, 3000);
 }
