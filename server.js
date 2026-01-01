@@ -3,23 +3,23 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-let messagesHistory = [];
+// Stockage des utilisateurs
+const clients = new Map(); // socket => { pseudo, socket }
 
-function extractSenderFromId(id) {
-  return id.split('-')[0];
+// Historique général
+let generalHistory = [];
+
+// Historique des conversations privées : { "Ali-Sara": [msg1, msg2] }
+let privateHistories = {};
+
+function getPrivateRoom(user1, user2) {
+  return [user1, user2].sort().join('-');
 }
 
-function extractSenderFromMessage(msg) {
-  const match = msg.match(/^\[.*?\]\s*(.*?):/);
-  return match ? match[1] : null;
-}
-
-// Fonction pour servir les fichiers statiques
-function serveStaticFile(req, res) {
+const server = http.createServer((req, res) => {
   const url = req.url === '/' ? '/index.html' : req.url;
   const filePath = path.join(__dirname, url);
 
-  // Sécurité : empêcher l'accès à des fichiers hors du dossier
   if (!filePath.startsWith(__dirname + path.sep)) {
     res.writeHead(403);
     res.end('Accès interdit');
@@ -30,36 +30,19 @@ function serveStaticFile(req, res) {
   const mimeTypes = {
     '.html': 'text/html; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
-    '.js': 'application/javascript; charset=utf-8',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.ico': 'image/x-icon'
+    '.js': 'application/javascript; charset=utf-8'
   };
-
   const contentType = mimeTypes[ext] || 'application/octet-stream';
 
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      if (err.code === 'ENOENT') {
-        res.writeHead(404);
-        res.end('Fichier non trouvé');
-      } else {
-        res.writeHead(500);
-        res.end('Erreur serveur');
-      }
+      res.writeHead(404);
+      res.end('Fichier non trouvé');
     } else {
       res.writeHead(200, { 'Content-Type': contentType });
       res.end(data);
     }
   });
-}
-
-const server = http.createServer((req, res) => {
-  // Si c'est une requête WebSocket, on ne sert pas de fichier
-  // Sinon, on sert les fichiers statiques
-  serveStaticFile(req, res);
 });
 
 const PORT = process.env.PORT || 3000;
@@ -71,118 +54,72 @@ const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (socket) => {
   console.log('👤 Nouvel utilisateur connecté');
-  socket.send(JSON.stringify({ type: 'history', messages: messagesHistory }));
+
+  // Envoyer historique général et liste des utilisateurs
+  socket.send(JSON.stringify({ type: 'init', history: generalHistory, users: Array.from(clients.values()).map(c => c.pseudo) }));
 
   socket.on('message', (data) => {
     try {
       const parsed = JSON.parse(data);
-      if (parsed.type === 'message') {
-        const fullMessage = parsed.text;
-
-        const parts = fullMessage.split(': ');
-        if (parts.length >= 2) {
-          const messageContent = parts.slice(1).join(': ').trim();
-          if (messageContent === 'remove conv from all') {
-            const senderPart = parts[0];
-            const senderMatch = senderPart.match(/\]\s*(.*)/);
-            const sender = senderMatch ? senderMatch[1] : 'Inconnu';
-            if (sender) {
-              console.log(`🗑️ ${sender} a demandé la suppression globale !`);
-              messagesHistory = [];
-              wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                  client.send(JSON.stringify({ type: 'clear_all' }));
-                }
-              });
-              return;
-            }
-          }
-        }
-
-        messagesHistory.push(fullMessage);
-        if (messagesHistory.length > 100) messagesHistory.shift();
-
+      
+      // Authentification (premier message)
+      if (parsed.type === 'auth') {
+        const pseudo = parsed.pseudo;
+        clients.set(socket, { pseudo, socket });
+        
+        // Annoncer à tous que l'utilisateur est en ligne
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
-            const payload = {
-              type: 'message',
-              text: fullMessage,
-              id: parsed.id,
-              timestamp: parsed.timestamp
-            };
-            if (parsed.media) payload.media = parsed.media;
-            if (parsed.audio) payload.audio = parsed.audio;
-            client.send(JSON.stringify(payload));
+            client.send(JSON.stringify({ type: 'user_join', user: pseudo }));
           }
         });
-        console.log('📩', fullMessage);
+        return;
       }
-      else if (parsed.type === 'edit') {
-        const originalMsg = messagesHistory.find(msg => 
-          msg.startsWith(parsed.originalPrefix)
-        );
-        if (originalMsg) {
-          const originalSender = extractSenderFromMessage(originalMsg);
-          const newSender = extractSenderFromMessage(parsed.text);
-          const requester = extractSenderFromId(parsed.id);
-          if (originalSender && originalSender === newSender && originalSender === requester) {
-            const index = messagesHistory.indexOf(originalMsg);
-            if (index !== -1) {
-              messagesHistory[index] = parsed.text;
-            }
-            wss.clients.forEach(client => {
-              if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({ 
-                  type: 'edit',
-                  id: parsed.id,
-                  text: parsed.text
-                }));
-              }
-            });
-          }
-        }
-      }
-      else if (parsed.type === 'delete_for_all') {
-        const originalMsg = messagesHistory.find(msg => 
-          msg.startsWith(parsed.originalPrefix)
-        );
-        if (originalMsg) {
-          const originalSender = extractSenderFromMessage(originalMsg);
-          const requester = extractSenderFromId(parsed.id);
-          if (originalSender && originalSender === requester) {
-            messagesHistory = messagesHistory.filter(msg => 
-              !msg.startsWith(parsed.originalPrefix)
-            );
-            wss.clients.forEach(client => {
-              if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({
-                  type: 'delete_message',
-                  id: parsed.id
-                }));
-              }
-            });
-          }
-        }
-      }
-      else if (parsed.type === 'typing') {
+
+      // Message général
+      if (parsed.type === 'message' && parsed.target === 'general') {
+        generalHistory.push(parsed.text);
+        if (generalHistory.length > 100) generalHistory.shift();
         wss.clients.forEach(client => {
-          if (client !== socket && client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-              type: 'typing',
-              user: parsed.user
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'message', text: parsed.text, target: 'general' }));
+          }
+        });
+      }
+      // Message privé
+      else if (parsed.type === 'message' && parsed.target && parsed.target !== 'general') {
+        const privateRoom = getPrivateRoom(parsed.sender, parsed.target);
+        if (!privateHistories[privateRoom]) privateHistories[privateRoom] = [];
+        privateHistories[privateRoom].push(parsed.text);
+        if (privateHistories[privateRoom].length > 100) privateHistories[privateRoom].shift();
+
+        // Envoyer seulement aux deux utilisateurs
+        clients.forEach(client => {
+          if (client.pseudo === parsed.sender || client.pseudo === parsed.target) {
+            client.socket.send(JSON.stringify({ 
+              type: 'message', 
+              text: parsed.text,
+              target: privateRoom,
+              isPrivate: true
             }));
           }
         });
       }
-      else if (parsed.type === 'stop_typing') {
-        wss.clients.forEach(client => {
-          if (client !== socket && client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-              type: 'stop_typing',
-              user: parsed.user
-            }));
+      // Suppression globale (dans le général seulement)
+      else if (parsed.type === 'message' && parsed.text.includes('remove conv from all')) {
+        const parts = parsed.text.split(': ');
+        if (parsed.target === 'general' && parts.length >= 2) {
+          const messageContent = parts.slice(1).join(': ').trim();
+          if (messageContent === 'remove conv from all') {
+            generalHistory = [];
+            wss.clients.forEach(client => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({ type: 'clear_all' }));
+              }
+            });
+            return;
           }
-        });
+        }
       }
     } catch (e) {
       console.log('Message non JSON, ignoré');
@@ -190,6 +127,16 @@ wss.on('connection', (socket) => {
   });
 
   socket.on('close', () => {
+    const client = clients.get(socket);
+    if (client) {
+      clients.delete(socket);
+      // Annoncer que l'utilisateur est parti
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'user_leave', user: client.pseudo }));
+        }
+      });
+    }
     console.log('👋 Utilisateur déconnecté');
   });
 });
