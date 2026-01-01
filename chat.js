@@ -1,14 +1,15 @@
-let user = '';
+// 🔹 Détecter le mode (général ou privé)
+const urlParams = new URLSearchParams(window.location.search);
+const isPrivate = window.location.pathname.includes('private.html');
+const targetUser = isPrivate ? urlParams.get('with') : null;
+
+// 🔹 Charger le pseudo IMMÉDIATEMENT depuis localStorage
+let user = localStorage.getItem('quickchat_user') || '';
 let mediaRecorder;
 let audioChunks = [];
 let socket = null;
 let typingTimer = null;
 let isTyping = false;
-
-// 🔹 Détecter si on est en mode privé
-const urlParams = new URLSearchParams(window.location.search);
-const isPrivate = window.location.pathname.includes('private.html');
-const targetUser = isPrivate ? urlParams.get('with') : null;
 
 // Sauvegarde locale
 let messagesHistory = [];
@@ -35,16 +36,22 @@ const onlineList = document.getElementById('onlineList');
 const onlineCount = document.getElementById('onlineCount');
 const privateTitle = document.getElementById('privateTitle');
 
-// Initialisation
+// Initialisation de l'interface
 if (isPrivate && targetUser) {
-  document.title = `💬 Privé avec ${targetUser}`;
-  if (privateTitle) privateTitle.textContent = `💬 Chat privé avec ${targetUser}`;
-  chatApp.style.display = 'block';
-  loginScreen?.remove();
+  if (!user) {
+    alert('Veuillez d’abord vous connecter sur la page principale.');
+    window.location.href = 'index.html';
+  } else {
+    document.title = `💬 Privé avec ${targetUser}`;
+    if (privateTitle) privateTitle.textContent = `💬 Chat privé avec ${targetUser}`;
+    chatApp.style.display = 'block';
+    if (loginScreen) loginScreen.remove();
+    onlinePanel?.remove();
+  }
 } else {
-  loginScreen.style.display = 'block';
+  if (loginScreen) loginScreen.style.display = 'block';
   chatApp.style.display = 'none';
-  onlinePanel.style.display = 'none';
+  if (onlinePanel) onlinePanel.style.display = 'none';
 }
 
 // Événements
@@ -64,25 +71,19 @@ function connectWebSocket() {
   socket = new WebSocket('wss://' + window.location.host);
   
   socket.onopen = () => {
-    console.log('🟢 Connecté au serveur');
+    console.log('🟢 WebSocket connecté');
     if (!isPrivate) {
       socket.send(JSON.stringify({ type: 'set_pseudo', pseudo: user }));
     } else {
-      // En mode privé, on suppose que user est déjà défini (via localStorage ou autre)
-      // Pour simplifier, on charge user depuis localStorage
-      const savedUser = localStorage.getItem('quickchat_user');
-      if (savedUser) {
-        user = savedUser;
-      } else {
-        alert('Erreur : pseudo non défini. Revenez à la page principale.');
-        window.close();
-      }
+      // En mode privé, on est déjà authentifié via localStorage
+      // Pas besoin d'envoyer set_pseudo
     }
   };
 
   socket.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
+
       if (data.type === 'history' && !isPrivate) {
         chatDiv.innerHTML = '';
         data.messages.forEach(msg => displayMessage(msg));
@@ -93,9 +94,13 @@ function connectWebSocket() {
         notifSound.play().catch(() => {});
         typingIndicator.textContent = '';
       }
-      else if (data.type === 'private_message' && isPrivate && (data.from === targetUser || data.from === user)) {
-        displayMessage(data.text, data.id, data.timestamp, data.media, data.audio);
-        notifSound.play().catch(() => {});
+      else if (data.type === 'private_message' && isPrivate) {
+        // Afficher uniquement les messages entre user et targetUser
+        if ((data.from === user && data.to === targetUser) || 
+            (data.from === targetUser && data.to === user)) {
+          displayMessage(data.text, data.id, data.timestamp, data.media, data.audio);
+          notifSound.play().catch(() => {});
+        }
       }
       else if (data.type === 'edit') {
         const msgDiv = document.querySelector(`.message[data-id="${data.id}"]`);
@@ -133,7 +138,7 @@ function connectWebSocket() {
           }
         });
         onlineCount.textContent = data.users.length;
-        onlinePanel.style.display = 'block';
+        if (onlinePanel) onlinePanel.style.display = 'block';
       }
       else if (data.type === 'error') {
         alert(data.message);
@@ -240,7 +245,7 @@ function displayMessage(fullMessage, id, timestamp, mediaData, audioData) {
   chatDiv.appendChild(messageDiv);
   chatDiv.scrollTop = messageDiv.offsetTop;
 
-  // Sauvegarder dans localStorage
+  // Sauvegarder localement
   if (isPrivate) {
     messagesHistory.push(fullMessage);
     localStorage.setItem(storageKey, JSON.stringify(messagesHistory));
@@ -404,9 +409,10 @@ function join() {
   if (p && p.length >= 2) {
     user = p;
     localStorage.setItem('quickchat_user', user);
-    loginScreen.style.display = 'none';
+    if (loginScreen) loginScreen.style.display = 'none';
     chatApp.style.display = 'block';
     if (clearMineBtn) clearMineBtn.style.display = 'inline-block';
+    onlinePanel.style.display = 'block';
     connectWebSocket();
   } else {
     alert('Pseudo invalide (min. 2 caractères).');
@@ -414,6 +420,12 @@ function join() {
 }
 
 function send() {
+  if (!user) {
+    alert('❌ Vous devez d’abord vous connecter sur la page principale.');
+    window.location.href = 'index.html';
+    return;
+  }
+
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     alert('Connexion perdue. Veuillez rafraîchir la page.');
     return;
@@ -425,23 +437,28 @@ function send() {
     const fullMsg = `[${t}] ${user}: ${m}`;
     const id = `${user}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
     
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      const payload = {
-        type: isPrivate ? 'private_message' : 'message',
-        text: fullMsg,
-        id: id,
-        timestamp: Date.now()
-      };
-      if (isPrivate) payload.to = targetUser;
-      socket.send(JSON.stringify(payload));
+    const payload = {
+      type: isPrivate ? 'private_message' : 'message',
+      text: fullMsg,
+      id: id,
+      timestamp: Date.now()
+    };
+    
+    if (isPrivate) {
+      if (!targetUser) {
+        alert('Erreur : destinataire non défini.');
+        return;
+      }
+      payload.to = targetUser;
     }
+
+    socket.send(JSON.stringify(payload));
     
     msgInput.value = '';
-    if (isTyping) {
+    
+    if (!isPrivate && isTyping) {
       isTyping = false;
-      if (!isPrivate && socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'stop_typing', user: user }));
-      }
+      socket.send(JSON.stringify({ type: 'stop_typing', user: user }));
     }
   }
 }
@@ -470,16 +487,13 @@ function startPrivateChat(target) {
   window.open(`private.html?with=${encodeURIComponent(target)}`, '_blank');
 }
 
-// Charger l'historique au démarrage (privé uniquement)
+// 🔹 Charger l'historique et connecter le WebSocket en mode privé
 if (isPrivate && targetUser) {
-  const savedUser = localStorage.getItem('quickchat_user');
-  if (savedUser) {
-    user = savedUser;
+  if (user) {
     messagesHistory = JSON.parse(localStorage.getItem(storageKey) || '[]');
     messagesHistory.forEach(msg => displayMessage(msg));
     connectWebSocket();
-  } else {
-    alert('Veuillez d’abord vous connecter sur la page principale.');
-    window.location.href = 'index.html';
   }
+} else if (!isPrivate) {
+  // Rien de spécial à faire ici — join() déclenchera connectWebSocket()
 }
