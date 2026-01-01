@@ -5,39 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>QuickChat - Projet Ultime</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
 </head>
 <body>
-  <div class="header">
-    <h2>💬 QuickChat ULTIME</h2>
-    <div class="clear-btns" id="clearButtons" style="display:none;">
-      <button id="clearMineBtn">🗑️ Effacer mes messages</button>
-    </div>
-  </div>
-  
+  <!-- Écran de login -->
   <div class="login-screen" id="loginScreen">
-    <h3>👤 Entrez un pseudo</h3>
-    <input type="text" id="pseudo" placeholder="Ex: Ali, Sara..." maxlength="15" />
-    <div class="controls">
-      <button id="joinBtn">Rejoindre le chat</button>
-    </div>
+    <h2>👤 Entrez un pseudo</h2>
+    <input type="text" id="pseudoInput" placeholder="Ex: Ali, Sara..." maxlength="15" />
+    <button id="loginBtn">Rejoindre</button>
   </div>
 
-  <div class="chat-app" id="chatApp">
-    <div id="chat"></div>
-    <div id="typingIndicator"></div>
-    
-    <div class="input-area">
-      <input type="text" id="msg" placeholder="Message... " />
-      <button id="sendBtn">Envoyer</button>
-      <button id="recordBtn">🎤</button>
-      <input type="file" id="fileInput" accept="image/*,video/*" style="display:none;">
-      <button id="fileBtn">📁</button>
+  <!-- App de chat -->
+  <div class="chat-app" id="chatApp" style="display:none;">
+    <div class="chat-container">
+      <!-- Liste des utilisateurs -->
+      <div class="users-list" id="usersList">
+        <div class="user-item active" data-user="general">💬 Général</div>
+      </div>
+
+      <!-- Zone de conversation -->
+      <div class="chat-area">
+        <div class="chat-header" id="chatHeader">💬 Général</div>
+        <div id="chat" class="messages"></div>
+        <div id="typingIndicator" class="typing-indicator"></div>
+        <div class="input-area">
+          <input type="text" id="msg" placeholder="Message..." />
+          <button id="sendBtn">Envoyer</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
-  
   <script src="script.js"></script>
 </body>
 </html>
