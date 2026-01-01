@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 let messagesHistory = [];
+const clients = new Map(); // Map<socket, { pseudo: string }>
 
 function extractSenderFromId(id) {
   return id.split('-')[0];
@@ -14,12 +15,10 @@ function extractSenderFromMessage(msg) {
   return match ? match[1] : null;
 }
 
-// Fonction pour servir les fichiers statiques
 function serveStaticFile(req, res) {
   const url = req.url === '/' ? '/index.html' : req.url;
   const filePath = path.join(__dirname, url);
 
-  // Sécurité : empêcher l'accès à des fichiers hors du dossier
   if (!filePath.startsWith(__dirname + path.sep)) {
     res.writeHead(403);
     res.end('Accès interdit');
@@ -57,8 +56,6 @@ function serveStaticFile(req, res) {
 }
 
 const server = http.createServer((req, res) => {
-  // Si c'est une requête WebSocket, on ne sert pas de fichier
-  // Sinon, on sert les fichiers statiques
   serveStaticFile(req, res);
 });
 
@@ -69,44 +66,54 @@ server.listen(PORT, () => {
 
 const wss = new WebSocket.Server({ server });
 
+function broadcastOnlineUsers() {
+  const users = Array.from(clients.values()).map(c => c.pseudo);
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type: 'online_users', users }));
+    }
+  });
+}
+
 wss.on('connection', (socket) => {
-  console.log('👤 Nouvel utilisateur connecté');
-  socket.send(JSON.stringify({ type: 'history', messages: messagesHistory }));
+  console.log('👤 Nouvelle connexion WebSocket');
 
   socket.on('message', (data) => {
     try {
       const parsed = JSON.parse(data);
-      if (parsed.type === 'message') {
-        const fullMessage = parsed.text;
 
-        const parts = fullMessage.split(': ');
-        if (parts.length >= 2) {
-          const messageContent = parts.slice(1).join(': ').trim();
-          if (messageContent === 'remove conv from all') {
-            const senderPart = parts[0];
-            const senderMatch = senderPart.match(/\]\s*(.*)/);
-            const sender = senderMatch ? senderMatch[1] : 'Inconnu';
-            if (sender) {
-              console.log(`🗑️ ${sender} a demandé la suppression globale !`);
-              messagesHistory = [];
-              wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                  client.send(JSON.stringify({ type: 'clear_all' }));
-                }
-              });
-              return;
-            }
-          }
+      if (parsed.type === 'set_pseudo') {
+        const pseudo = parsed.pseudo.trim();
+        if (!pseudo || pseudo.length < 2) {
+          socket.close();
+          return;
         }
 
-        messagesHistory.push(fullMessage);
+        const pseudoExists = Array.from(clients.values()).some(c => c.pseudo === pseudo);
+        if (pseudoExists) {
+          socket.send(JSON.stringify({ type: 'error', message: 'Pseudo déjà utilisé.' }));
+          return;
+        }
+
+        clients.set(socket, { pseudo });
+        socket.send(JSON.stringify({ type: 'history', messages: messagesHistory }));
+        broadcastOnlineUsers();
+        return;
+      }
+
+      const senderInfo = clients.get(socket);
+      if (!senderInfo) return;
+      const sender = senderInfo.pseudo;
+
+      if (parsed.type === 'message') {
+        messagesHistory.push(parsed.text);
         if (messagesHistory.length > 100) messagesHistory.shift();
 
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
             const payload = {
               type: 'message',
-              text: fullMessage,
+              text: parsed.text,
               id: parsed.id,
               timestamp: parsed.timestamp
             };
@@ -115,41 +122,88 @@ wss.on('connection', (socket) => {
             client.send(JSON.stringify(payload));
           }
         });
-        console.log('📩', fullMessage);
       }
+
+      else if (parsed.type === 'private_message') {
+        const target = parsed.to;
+        let targetSocket = null;
+        for (let [sock, info] of clients.entries()) {
+          if (info.pseudo === target) {
+            targetSocket = sock;
+            break;
+          }
+        }
+
+        const payload = {
+          type: 'private_message',
+          from: sender,
+          text: parsed.text,
+          id: parsed.id,
+          timestamp: parsed.timestamp
+        };
+        if (parsed.media) payload.media = parsed.media;
+        if (parsed.audio) payload.audio = parsed.audio;
+
+        if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+          targetSocket.send(JSON.stringify(payload));
+        }
+        // Toujours envoyer à l'expéditeur
+        socket.send(JSON.stringify(payload));
+      }
+
       else if (parsed.type === 'edit') {
-        const originalMsg = messagesHistory.find(msg => 
-          msg.startsWith(parsed.originalPrefix)
-        );
-        if (originalMsg) {
-          const originalSender = extractSenderFromMessage(originalMsg);
-          const newSender = extractSenderFromMessage(parsed.text);
-          const requester = extractSenderFromId(parsed.id);
-          if (originalSender && originalSender === newSender && originalSender === requester) {
-            const index = messagesHistory.indexOf(originalMsg);
-            if (index !== -1) {
-              messagesHistory[index] = parsed.text;
+        if (parsed.to) {
+          // Édition privée
+          let targetSocket = null;
+          for (let [sock, info] of clients.entries()) {
+            if (info.pseudo === parsed.to) {
+              targetSocket = sock;
+              break;
             }
-            wss.clients.forEach(client => {
-              if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({ 
-                  type: 'edit',
-                  id: parsed.id,
-                  text: parsed.text
-                }));
-              }
-            });
+          }
+          if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+            targetSocket.send(JSON.stringify({
+              type: 'edit',
+              id: parsed.id,
+              text: parsed.text
+            }));
+          }
+          socket.send(JSON.stringify({
+            type: 'edit',
+            id: parsed.id,
+            text: parsed.text
+          }));
+        } else {
+          // Édition publique
+          const originalMsg = messagesHistory.find(msg => 
+            msg.startsWith(parsed.originalPrefix)
+          );
+          if (originalMsg) {
+            const originalSender = extractSenderFromMessage(originalMsg);
+            if (originalSender === sender) {
+              const index = messagesHistory.indexOf(originalMsg);
+              if (index !== -1) messagesHistory[index] = parsed.text;
+              wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                  client.send(JSON.stringify({ 
+                    type: 'edit',
+                    id: parsed.id,
+                    text: parsed.text
+                  }));
+                }
+              });
+            }
           }
         }
       }
+
       else if (parsed.type === 'delete_for_all') {
         const originalMsg = messagesHistory.find(msg => 
           msg.startsWith(parsed.originalPrefix)
         );
         if (originalMsg) {
           const originalSender = extractSenderFromMessage(originalMsg);
-          const requester = extractSenderFromId(parsed.id);
-          if (originalSender && originalSender === requester) {
+          if (originalSender === sender) {
             messagesHistory = messagesHistory.filter(msg => 
               !msg.startsWith(parsed.originalPrefix)
             );
@@ -164,32 +218,40 @@ wss.on('connection', (socket) => {
           }
         }
       }
+
       else if (parsed.type === 'typing') {
         wss.clients.forEach(client => {
           if (client !== socket && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({
               type: 'typing',
-              user: parsed.user
+              user: sender
             }));
           }
         });
       }
+
       else if (parsed.type === 'stop_typing') {
         wss.clients.forEach(client => {
           if (client !== socket && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({
               type: 'stop_typing',
-              user: parsed.user
+              user: sender
             }));
           }
         });
       }
+
     } catch (e) {
-      console.log('Message non JSON, ignoré');
+      console.error('Erreur parsing:', e);
     }
   });
 
   socket.on('close', () => {
-    console.log('👋 Utilisateur déconnecté');
+    const client = clients.get(socket);
+    if (client) {
+      console.log(`👋 ${client.pseudo} déconnecté`);
+      clients.delete(socket);
+      broadcastOnlineUsers();
+    }
   });
 });
