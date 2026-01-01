@@ -1,4 +1,3 @@
-/* Réinitialisation */
 * {
   margin: 0;
   padding: 0;
@@ -161,6 +160,17 @@ body {
 #recordBtn.active {
   background: #e74c3c;
 }
+#backToGeneralBtn {
+  background: #999;
+  color: white;
+  font-size: 14px;
+  padding: 10px 15px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+#backToGeneralBtn:hover {
+  background: #777;
+}
 
 /* Responsive */
 @media (max-width: 600px) {
@@ -189,5 +199,9 @@ body {
   }
   #msg {
     min-width: auto;
+  }
+  #backToGeneralBtn {
+    width: 100%;
+    text-align: center;
   }
 }
