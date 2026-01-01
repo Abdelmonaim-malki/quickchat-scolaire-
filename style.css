@@ -140,3 +140,32 @@ body {
   border-radius: 20px;
   cursor: pointer;
 }
+/* 🔸 Liste des utilisateurs en ligne */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.online-users {
+  font-size: 0.9em;
+  color: #666;
+  background: #f0f0f0;
+  padding: 5px 10px;
+  border-radius: 10px;
+}
+.online-users span {
+  font-weight: bold;
+  color: #333;
+}
+.user-private {
+  position: relative;
+}
+.user-private.new-message::after {
+  content: "•";
+  color: red;
+  position: absolute;
+  top: -5px;
+  right: -10px;
+  font-size: 1.5em;
+}
