@@ -6,13 +6,11 @@ const path = require('path');
 let messagesHistory = [];
 const onlineUsers = new Set();
 
-function extractSenderFromId(id) {
-  return id.split('-')[0];
-}
-
 function extractSenderFromMessage(msg) {
-  const match = msg.match(/^\[.*?\]\s*(.*?)(?: → |:)/);
-  return match ? match[1] : null;
+  const privateMatch = msg.match(/^\[.*?\]\s*(.*?)\s*→\s*(.*?):/);
+  if (privateMatch) return privateMatch[1];
+  const publicMatch = msg.match(/^\[.*?\]\s*(.*?):/);
+  return publicMatch ? publicMatch[1] : null;
 }
 
 function serveStaticFile(req, res) {
@@ -106,14 +104,55 @@ wss.on('connection', (socket) => {
         const fullMessage = parsed.text;
         const to = parsed.to;
 
-        if (!to) {
+        if (to) {
+          // 🔹 Message privé
           const parts = fullMessage.split(': ');
           if (parts.length >= 2) {
             const messageContent = parts.slice(1).join(': ').trim();
             if (messageContent === 'remove conv from all') {
-              const senderPart = parts[0];
-              const senderMatch = senderPart.match(/\]\s*(.*)/);
-              const sender = senderMatch ? senderMatch[1] : 'Inconnu';
+              const sender = socket.currentUser;
+              console.log(`🗑️ ${sender} a demandé la suppression de la conversation privée avec ${to} !`);
+
+              wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                  if (client.currentUser === sender || client.currentUser === to) {
+                    client.send(JSON.stringify({
+                      type: 'clear_private',
+                      with: to,
+                      by: sender
+                    }));
+                  }
+                }
+              });
+              return;
+            }
+          }
+
+          const payload = {
+            type: 'message',
+            text: fullMessage,
+            id: parsed.id,
+            timestamp: parsed.timestamp,
+            to: to
+          };
+          if (parsed.media) payload.media = parsed.media;
+          if (parsed.audio) payload.audio = parsed.audio;
+
+          wss.clients.forEach(client => {
+            if (client.readyState !== WebSocket.OPEN) return;
+            if (client.currentUser === socket.currentUser || client.currentUser === to) {
+              client.send(JSON.stringify(payload));
+            }
+          });
+
+          console.log('📩 (Privé)', fullMessage, `→ ${to}`);
+        } else {
+          // 🔹 Message général
+          const parts = fullMessage.split(': ');
+          if (parts.length >= 2) {
+            const messageContent = parts.slice(1).join(': ').trim();
+            if (messageContent === 'remove conv from all') {
+              const sender = extractSenderFromMessage(fullMessage);
               if (sender) {
                 console.log(`🗑️ ${sender} a demandé la suppression globale !`);
                 messagesHistory = [];
@@ -126,38 +165,32 @@ wss.on('connection', (socket) => {
               }
             }
           }
+
           messagesHistory.push(fullMessage);
           if (messagesHistory.length > 100) messagesHistory.shift();
-        }
 
-        const payload = {
-          type: 'message',
-          text: fullMessage,
-          id: parsed.id,
-          timestamp: parsed.timestamp,
-          to: to
-        };
-        if (parsed.media) payload.media = parsed.media;
-        if (parsed.audio) payload.audio = parsed.audio;
+          const payload = {
+            type: 'message',
+            text: fullMessage,
+            id: parsed.id,
+            timestamp: parsed.timestamp,
+            to: to
+          };
+          if (parsed.media) payload.media = parsed.media;
+          if (parsed.audio) payload.audio = parsed.audio;
 
-        wss.clients.forEach(client => {
-          if (client.readyState !== WebSocket.OPEN) return;
-
-          if (to) {
-            if (client.currentUser === socket.currentUser || client.currentUser === to) {
+          wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify(payload));
             }
-          } else {
-            client.send(JSON.stringify(payload));
-          }
-        });
+          });
 
-        console.log('📩', fullMessage, to ? `(→ ${to})` : '');
+          console.log('📩 (Général)', fullMessage);
+        }
       }
       else if (parsed.type === 'edit') {
         const to = parsed.to;
         if (to) {
-          // Édition privée : pas stockée côté serveur, juste relayée
           wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
               if (client.currentUser === socket.currentUser || client.currentUser === to) {
@@ -199,7 +232,6 @@ wss.on('connection', (socket) => {
       else if (parsed.type === 'delete_for_all') {
         const to = parsed.to;
         if (to) {
-          // Suppression privée : relayée seulement
           wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
               if (client.currentUser === socket.currentUser || client.currentUser === to) {
