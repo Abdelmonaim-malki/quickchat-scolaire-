@@ -5,23 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>QuickChat - Projet Ultime</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+  <link rel="icon" href="image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
 </head>
 <body>
   <div class="header">
-    <div>
-      <button id="backToGeneralBtn" style="display:none; background:#555; border:none; color:white; padding:6px 10px; border-radius:5px; cursor:pointer; margin-right:10px;">← Général</button>
-      <h2>💬 QuickChat ULTIME</h2>
-    </div>
+    <h2>💬 QuickChat ULTIME</h2>
     <div class="clear-btns" id="clearButtons" style="display:none;">
       <button id="clearMineBtn">🗑️ Effacer mes messages</button>
     </div>
-  </div>
-
-  <!-- 🔹 Liste des utilisateurs en ligne -->
-  <div class="online-panel" id="onlinePanel" style="display:none; margin:15px 0; padding:12px; background:#f0f7ff; border-radius:10px;">
-    <h4 style="margin:0 0 10px; font-size:15px;">👥 En ligne (<span id="onlineCount">0</span>)</h4>
-    <ul id="onlineList" style="list-style:none; padding:0; margin:0;"></ul>
   </div>
   
   <div class="login-screen" id="loginScreen">
@@ -45,8 +36,8 @@
     </div>
   </div>
 
-  <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" preload="auto"></audio>
+  <audio id="notif-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3    " preload="auto"></audio>
   
-  <script src="chat.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
