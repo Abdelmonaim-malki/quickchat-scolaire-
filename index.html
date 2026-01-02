@@ -24,11 +24,23 @@
   </div>
 
   <div class="chat-app" id="chatApp">
+    <!-- Onglets -->
+    <div class="tabs">
+      <button class="tab-btn active" data-target="general">💬 Général</button>
+      <div id="privateTabs"></div>
+    </div>
+
+    <!-- Utilisateurs en ligne -->
     <div class="online-users">
       <h4>👥 En ligne (<span id="onlineCount">0</span>)</h4>
       <ul id="onlineList"></ul>
     </div>
-    <div id="chat"></div>
+
+    <!-- Zones de chat -->
+    <div class="chat-areas">
+      <div id="chat-general" class="chat-area active"></div>
+    </div>
+
     <div id="typingIndicator"></div>
     
     <div class="input-area">
