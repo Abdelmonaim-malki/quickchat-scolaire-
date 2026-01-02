@@ -168,3 +168,33 @@ button:hover {
   min-height: 20px;
   text-align: center;
 }
+.online-users {
+  background: #f0f4ff;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.online-users h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #555;
+}
+.online-users ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.online-users li {
+  padding: 4px 0;
+  font-size: 13px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.online-users li::before {
+  content: "🟢";
+  font-size: 10px;
+}
