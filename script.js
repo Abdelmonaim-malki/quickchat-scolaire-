@@ -5,12 +5,10 @@ let socket = null;
 let typingTimer = null;
 let isTyping = false;
 
-// 🔹 Gestion des conversations
-let currentChat = 'general'; // 'general' ou 'user:Ali'
+let currentChat = 'general';
 let onlineUsers = new Set();
-let unreadCounts = {}; // { "user:Ali": 2 }
+let unreadCounts = {};
 
-// Éléments DOM
 const loginScreen = document.getElementById('loginScreen');
 const chatApp = document.getElementById('chatApp');
 const pseudoInput = document.getElementById('pseudo');
@@ -29,7 +27,7 @@ const onlineCount = document.getElementById('onlineCount');
 const privateTabsContainer = document.getElementById('privateTabs');
 const chatAreasContainer = document.querySelector('.chat-areas');
 
-// Événements
+// 🔹 Écouteurs d'événements
 joinBtn.addEventListener('click', join);
 sendBtn.addEventListener('click', send);
 msgInput.addEventListener('keypress', (e) => {
@@ -40,6 +38,7 @@ clearMineBtn.addEventListener('click', clearMine);
 recordBtn.addEventListener('click', toggleRecording);
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', sendFile);
+document.getElementById('general-tab').addEventListener('click', () => switchChat('general'));
 
 // 🔹 Basculer de conversation
 function switchChat(target) {
@@ -47,7 +46,7 @@ function switchChat(target) {
   document.querySelectorAll('.chat-area').forEach(area => area.classList.remove('active'));
   
   if (target === 'general') {
-    document.querySelector('.tab-btn[data-target="general"]').classList.add('active');
+    document.getElementById('general-tab').classList.add('active');
     chatGeneral.classList.add('active');
   } else {
     const tabBtn = document.querySelector(`.tab-btn[data-target="${target}"]`);
@@ -72,7 +71,6 @@ function openPrivateChat(username) {
     return;
   }
 
-  // Onglet
   const tabBtn = document.createElement('button');
   tabBtn.className = 'tab-btn';
   tabBtn.textContent = `🔐 ${username}`;
@@ -80,13 +78,11 @@ function openPrivateChat(username) {
   tabBtn.onclick = () => switchChat(target);
   privateTabsContainer.appendChild(tabBtn);
 
-  // Zone de chat
   const chatArea = document.createElement('div');
   chatArea.id = `chat-${target}`;
   chatArea.className = 'chat-area';
   chatAreasContainer.appendChild(chatArea);
 
-  // Charger historique
   const saved = localStorage.getItem(`conv-${target}`);
   if (saved) {
     JSON.parse(saved).forEach(msg => displayMessageInArea(msg, chatArea));
@@ -95,7 +91,7 @@ function openPrivateChat(username) {
   switchChat(target);
 }
 
-// 🔹 Afficher message dans une zone spécifique
+// 🔹 Afficher un message dans une zone spécifique (utilisé au chargement)
 function displayMessageInArea(msgData, area) {
   const { fullMessage, id, timestamp, mediaData, audioData, to } = msgData;
   const messageDiv = document.createElement('div');
@@ -171,30 +167,28 @@ function displayMessageInArea(msgData, area) {
   area.scrollTop = messageDiv.offsetTop;
 }
 
-// 🔹 Fonction principale d'affichage
+// 🔹 Fonction PRINCIPALE – corrigée
 function displayMessage(fullMessage, id, timestamp, mediaData, audioData, to = null) {
   if (!fullMessage || typeof fullMessage !== 'string') return;
 
   let targetArea = null;
   let storageKey = null;
 
-  if (to && to !== user) {
-    // Message privé reçu
-    const sender = extractSender(fullMessage);
-    const target = `user:${sender}`;
-    targetArea = document.getElementById(`chat-${target}`);
-    storageKey = `conv-${target}`;
-    if (currentChat !== target) {
-      unreadCounts[target] = (unreadCounts[target] || 0) + 1;
-      updateOnlineList();
-      notifSound.play().catch(() => {});
-    }
-  } else if (to === user) {
-    // Message privé envoyé
-    const matchDest = fullMessage.match(/→ (.*?):/);
-    if (matchDest) {
-      const dest = matchDest[1];
-      const target = `user:${dest}`;
+  if (to) {
+    if (to === user) {
+      // Message privé REÇU
+      const sender = extractSender(fullMessage);
+      const target = `user:${sender}`;
+      targetArea = document.getElementById(`chat-${target}`);
+      storageKey = `conv-${target}`;
+      if (currentChat !== target) {
+        unreadCounts[target] = (unreadCounts[target] || 0) + 1;
+        updateOnlineList();
+        notifSound.play().catch(() => {});
+      }
+    } else {
+      // Message privé ENVOYÉ
+      const target = `user:${to}`;
       targetArea = document.getElementById(`chat-${target}`);
       storageKey = `conv-${target}`;
     }
@@ -204,7 +198,8 @@ function displayMessage(fullMessage, id, timestamp, mediaData, audioData, to = n
     storageKey = 'conv-general';
   }
 
-  if (!targetArea && to && to !== user) {
+  // Créer zone silencieusement si message reçu en arrière-plan
+  if (!targetArea && to && to === user) {
     const sender = extractSender(fullMessage);
     const target = `user:${sender}`;
     targetArea = createPrivateChatArea(sender);
@@ -473,7 +468,6 @@ function join() {
     chatApp.style.display = 'block';
     clearMineBtn.style.display = 'inline-block';
     
-    // Charger historique général
     const savedGeneral = localStorage.getItem('conv-general');
     if (savedGeneral) {
       JSON.parse(savedGeneral).forEach(msg => {
@@ -501,18 +495,16 @@ function connectWebSocket() {
   socket.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      if (data.type === 'history') {
-        // Pas utilisé en mode privé, mais gardé pour compatibilité
-      } 
-      else if (data.type === 'message') {
+      if (data.type === 'message') {
         displayMessage(data.text, data.id, data.timestamp, data.media, data.audio, data.to);
         if (!data.to) typingIndicator.textContent = '';
       }
       else if (data.type === 'edit') {
-        const target = data.to ? `user:${data.to}` : 'general';
-        const area = data.to ? document.getElementById(`chat-user:${data.to}`) : chatGeneral;
-        if (area) {
-          const msgDiv = area.querySelector(`.message[data-id="${data.id}"]`);
+        const targetArea = data.to 
+          ? document.getElementById(`chat-user:${data.to}`) 
+          : chatGeneral;
+        if (targetArea) {
+          const msgDiv = targetArea.querySelector(`.message[data-id="${data.id}"]`);
           if (msgDiv) {
             const sender = extractSender(data.text);
             const color = stringToColor(sender);
@@ -588,6 +580,16 @@ function updateOnlineList() {
   onlineCount.textContent = onlineUsers.size - 1;
 }
 
+// 🔹 CORRIGÉ : extraction correcte de l'expéditeur
+function extractSender(message) {
+  const privateMatch = message.match(/^\[.*?\]\s*(.*?)\s*→\s*(.*?):/);
+  if (privateMatch) {
+    return privateMatch[1]; // expéditeur dans message privé
+  }
+  const publicMatch = message.match(/^\[.*?\]\s*(.*?):/);
+  return publicMatch ? publicMatch[1] : 'Inconnu';
+}
+
 function stringToColor(str) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -601,11 +603,7 @@ function stringToColor(str) {
   return color;
 }
 
-function extractSender(message) {
-  const match = message.match(/^\[.*?\]\s*(.*?)(?: → |:)/);
-  return match ? match[1] : 'Inconnu';
-}
-
+// 🔹 Fonction d'envoi – inchangée, mais maintenant fonctionnelle
 function send() {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     alert('Connexion perdue. Veuillez rafraîchir la page.');
