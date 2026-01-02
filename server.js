@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 let messagesHistory = [];
+const onlineUsers = new Set();
 
 function extractSenderFromId(id) {
   return id.split('-')[0];
@@ -14,12 +15,10 @@ function extractSenderFromMessage(msg) {
   return match ? match[1] : null;
 }
 
-// Fonction pour servir les fichiers statiques
 function serveStaticFile(req, res) {
   const url = req.url === '/' ? '/index.html' : req.url;
   const filePath = path.join(__dirname, url);
 
-  // Sécurité : empêcher l'accès à des fichiers hors du dossier
   if (!filePath.startsWith(__dirname + path.sep)) {
     res.writeHead(403);
     res.end('Accès interdit');
@@ -57,8 +56,6 @@ function serveStaticFile(req, res) {
 }
 
 const server = http.createServer((req, res) => {
-  // Si c'est une requête WebSocket, on ne sert pas de fichier
-  // Sinon, on sert les fichiers statiques
   serveStaticFile(req, res);
 });
 
@@ -73,12 +70,44 @@ wss.on('connection', (socket) => {
   console.log('👤 Nouvel utilisateur connecté');
   socket.send(JSON.stringify({ type: 'history', messages: messagesHistory }));
 
+  let currentUser = null;
+
   socket.on('message', (data) => {
     try {
       const parsed = JSON.parse(data);
+
+      // 🔹 Gestion de l'arrivée d'un utilisateur
+      if (parsed.type === 'user_joined' && parsed.user) {
+        currentUser = parsed.user;
+        onlineUsers.add(currentUser);
+        console.log(`✅ ${currentUser} est en ligne`);
+
+        // Envoyer la liste complète à ce nouvel utilisateur
+        socket.send(JSON.stringify({
+          type: 'online_users',
+          users: Array.from(onlineUsers)
+        }));
+
+        // Avertir les autres utilisateurs
+        wss.clients.forEach(client => {
+          if (client !== socket && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'user_joined',
+              user: currentUser
+            }));
+          }
+        });
+        return;
+      }
+
+      // ❌ Si aucun utilisateur n'est identifié, ignorer les autres messages
+      if (!currentUser) {
+        console.warn('Message reçu avant identification de l’utilisateur');
+        return;
+      }
+
       if (parsed.type === 'message') {
         const fullMessage = parsed.text;
-
         const parts = fullMessage.split(': ');
         if (parts.length >= 2) {
           const messageContent = parts.slice(1).join(': ').trim();
@@ -102,16 +131,17 @@ wss.on('connection', (socket) => {
         messagesHistory.push(fullMessage);
         if (messagesHistory.length > 100) messagesHistory.shift();
 
+        const payload = {
+          type: 'message',
+          text: fullMessage,
+          id: parsed.id,
+          timestamp: parsed.timestamp
+        };
+        if (parsed.media) payload.media = parsed.media;
+        if (parsed.audio) payload.audio = parsed.audio;
+
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
-            const payload = {
-              type: 'message',
-              text: fullMessage,
-              id: parsed.id,
-              timestamp: parsed.timestamp
-            };
-            if (parsed.media) payload.media = parsed.media;
-            if (parsed.audio) payload.audio = parsed.audio;
             client.send(JSON.stringify(payload));
           }
         });
@@ -124,7 +154,7 @@ wss.on('connection', (socket) => {
         if (originalMsg) {
           const originalSender = extractSenderFromMessage(originalMsg);
           const newSender = extractSenderFromMessage(parsed.text);
-          const requester = extractSenderFromId(parsed.id);
+          const requester = currentUser;
           if (originalSender && originalSender === newSender && originalSender === requester) {
             const index = messagesHistory.indexOf(originalMsg);
             if (index !== -1) {
@@ -148,7 +178,7 @@ wss.on('connection', (socket) => {
         );
         if (originalMsg) {
           const originalSender = extractSenderFromMessage(originalMsg);
-          const requester = extractSenderFromId(parsed.id);
+          const requester = currentUser;
           if (originalSender && originalSender === requester) {
             messagesHistory = messagesHistory.filter(msg => 
               !msg.startsWith(parsed.originalPrefix)
@@ -184,12 +214,24 @@ wss.on('connection', (socket) => {
           }
         });
       }
+
     } catch (e) {
       console.log('Message non JSON, ignoré');
     }
   });
 
   socket.on('close', () => {
-    console.log('👋 Utilisateur déconnecté');
+    if (currentUser) {
+      onlineUsers.delete(currentUser);
+      console.log(`👋 ${currentUser} s'est déconnecté`);
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({
+            type: 'user_left',
+            user: currentUser
+          }));
+        }
+      });
+    }
   });
 });
