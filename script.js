@@ -5,6 +5,11 @@ let socket = null;
 let typingTimer = null;
 let isTyping = false;
 
+// 🔹 Gestion des utilisateurs en ligne
+let onlineUsers = new Set();
+const onlineList = document.getElementById('onlineList');
+const onlineCount = document.getElementById('onlineCount');
+
 // Éléments DOM
 const loginScreen = document.getElementById('loginScreen');
 const chatApp = document.getElementById('chatApp');
@@ -38,6 +43,11 @@ function connectWebSocket() {
   
   socket.onopen = () => {
     console.log('🟢 Connecté au serveur');
+    // 🔹 Annoncer que l'utilisateur vient de rejoindre
+    socket.send(JSON.stringify({
+      type: 'user_joined',
+      user: user
+    }));
   };
 
   socket.onmessage = (e) => {
@@ -78,6 +88,19 @@ function connectWebSocket() {
       else if (data.type === 'stop_typing') {
         typingIndicator.textContent = '';
       }
+      // 🔹 Gestion des utilisateurs en ligne
+      else if (data.type === 'online_users') {
+        onlineUsers = new Set(data.users);
+        updateOnlineList();
+      }
+      else if (data.type === 'user_joined') {
+        onlineUsers.add(data.user);
+        updateOnlineList();
+      }
+      else if (data.type === 'user_left') {
+        onlineUsers.delete(data.user);
+        updateOnlineList();
+      }
     } catch (err) {
       console.error('Erreur message:', err);
     }
@@ -93,6 +116,16 @@ function connectWebSocket() {
       if (user) connectWebSocket();
     }, 3000);
   };
+}
+
+function updateOnlineList() {
+  onlineList.innerHTML = '';
+  onlineUsers.forEach(u => {
+    const li = document.createElement('li');
+    li.textContent = u;
+    onlineList.appendChild(li);
+  });
+  onlineCount.textContent = onlineUsers.size;
 }
 
 function stringToColor(str) {
