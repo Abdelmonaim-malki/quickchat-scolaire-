@@ -3,51 +3,45 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>QuickChat - ULTIME</title>
+  <title>QuickChat - Projet Ultime</title>
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
 </head>
 <body>
-  <!-- 🔹 Header dynamique -->
   <div class="header">
-    <h2 id="chatTitle">💬 QuickChat ULTIME</h2>
-    <button id="backToGeneralBtn" style="display:none; background:#555;">← Général</button>
-  </div>
-
-  <!-- 🔹 Liste des conversations (à gauche) -->
-  <div class="sidebar" id="sidebar">
-    <div class="login-screen" id="loginScreen">
-      <h3>👤 Entrez un pseudo</h3>
-      <input type="text" id="pseudo" placeholder="Ex: Ali, Sara..." maxlength="15" />
-      <div class="controls">
-        <button id="joinBtn">Rejoindre</button>
-      </div>
+    <div>
+      <button id="backToGeneralBtn" style="display:none; background:#555; border:none; color:white; padding:6px 10px; border-radius:5px; cursor:pointer; margin-right:10px;">← Général</button>
+      <h2>💬 QuickChat ULTIME</h2>
     </div>
-
-    <div class="conversations" id="conversations" style="display:none;">
-      <h4>🗨️ Conversations</h4>
-      <ul id="convList">
-        <li class="conv-item active" data-conv="general">💬 Général</li>
-      </ul>
-      
-      <h4>👥 En ligne</h4>
-      <ul id="onlineList"></ul>
+    <div class="clear-btns" id="clearButtons" style="display:none;">
+      <button id="clearMineBtn">🗑️ Effacer mes messages</button>
     </div>
   </div>
 
-  <!-- 🔹 Zone de chat principale -->
-  <div class="chat-main" id="chatMain">
-    <div class="chat-app" id="chatApp" style="display:none;">
-      <div id="chat"></div>
-      <div id="typingIndicator"></div>
-      
-      <div class="input-area">
-        <input type="text" id="msg" placeholder="Message... " />
-        <button id="sendBtn">Envoyer</button>
-        <button id="recordBtn">🎤</button>
-        <input type="file" id="fileInput" accept="image/*,video/*" style="display:none;">
-        <button id="fileBtn">📁</button>
-      </div>
+  <!-- 🔹 Liste des utilisateurs en ligne -->
+  <div class="online-panel" id="onlinePanel" style="display:none; margin:15px 0; padding:12px; background:#f0f7ff; border-radius:10px;">
+    <h4 style="margin:0 0 10px; font-size:15px;">👥 En ligne (<span id="onlineCount">0</span>)</h4>
+    <ul id="onlineList" style="list-style:none; padding:0; margin:0;"></ul>
+  </div>
+  
+  <div class="login-screen" id="loginScreen">
+    <h3>👤 Entrez un pseudo</h3>
+    <input type="text" id="pseudo" placeholder="Ex: Ali, Sara..." maxlength="15" />
+    <div class="controls">
+      <button id="joinBtn">Rejoindre le chat</button>
+    </div>
+  </div>
+
+  <div class="chat-app" id="chatApp">
+    <div id="chat"></div>
+    <div id="typingIndicator"></div>
+    
+    <div class="input-area">
+      <input type="text" id="msg" placeholder="Message... " />
+      <button id="sendBtn">Envoyer</button>
+      <button id="recordBtn">🎤</button>
+      <input type="file" id="fileInput" accept="image/*,video/*" style="display:none;">
+      <button id="fileBtn">📁</button>
     </div>
   </div>
 
