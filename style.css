@@ -43,6 +43,46 @@ body {
 .chat-app {
   display: none;
 }
+
+/* 🔹 Onglets */
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.tab-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 20px;
+  background: #e0e0e0;
+  border: none;
+  cursor: pointer;
+}
+.tab-btn.active {
+  background: #6e8efb;
+  color: white;
+}
+
+/* 🔹 Zones de chat */
+.chat-areas {
+  position: relative;
+  height: 330px;
+  margin: 10px 0;
+}
+.chat-area {
+  display: none;
+  height: 100%;
+  overflow-y: auto;
+  padding: 12px;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+.chat-area.active {
+  display: block;
+}
+
 .input-area {
   display: flex;
   gap: 8px;
@@ -72,16 +112,7 @@ button:hover {
 #recordBtn.active {
   background: #e74c3c;
 }
-#chat {
-  height: 330px;
-  border: 1px solid #eee;
-  margin: 10px 0;
-  padding: 12px;
-  overflow-y: auto;
-  background: #fff;
-  border-radius: 8px;
-  position: relative;
-}
+
 .message {
   margin: 10px 0;
   padding: 10px;
@@ -96,11 +127,6 @@ button:hover {
 .edited {
   font-size: 0.9em;
   color: #666;
-}
-.media, .audio-player {
-  margin-top: 8px;
-  max-width: 250px;
-  border-radius: 8px;
 }
 .actions {
   margin-top: 8px;
@@ -168,6 +194,8 @@ button:hover {
   min-height: 20px;
   text-align: center;
 }
+
+/* 🔹 Utilisateurs en ligne */
 .online-users {
   background: #f0f4ff;
   padding: 10px;
@@ -193,8 +221,24 @@ button:hover {
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
 }
 .online-users li::before {
   content: "🟢";
   font-size: 10px;
+}
+
+/* 🔹 Badge notification */
+.notification-badge {
+  background: red;
+  color: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  vertical-align: middle;
 }
